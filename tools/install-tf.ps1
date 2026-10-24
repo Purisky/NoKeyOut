@@ -444,6 +444,44 @@ function Expand-ImageArchive([string]$Src, [string]$Tmp, [string]$SevenZipPath) 
   Fail "unsupported image type: $ext (use .img, .img.xz, .img.gz, or .zip)"
 }
 
+function Format-GB($Bytes) {
+  if ($null -eq $Bytes) { return '-' }
+  try { return ('{0:N2} GB' -f ([double]$Bytes / 1GB)) } catch { return '-' }
+}
+
+function Get-DiskDetails($Disk) {
+  $vols = @()
+  $parts = @(Get-Partition -DiskNumber $Disk.Number -ErrorAction SilentlyContinue)
+  foreach ($p in $parts) {
+    $v = $null
+    if ($p.DriveLetter) { $v = Get-Volume -DriveLetter $p.DriveLetter -ErrorAction SilentlyContinue }
+    if (-not $v) { $v = Get-Volume -Partition $p -ErrorAction SilentlyContinue }
+    if ($v) {
+      $letter = if ($p.DriveLetter) { "$($p.DriveLetter):" } else { '(no drive letter)' }
+      $label = if ($v.FileSystemLabel) { $v.FileSystemLabel } else { '(no label)' }
+      $fs = if ($v.FileSystemType) { $v.FileSystemType } else { '-' }
+      $vols += ("{0}  {1}  {2}  free {3} / total {4}" -f $letter, $fs, $label, (Format-GB $v.SizeRemaining), (Format-GB $v.Size))
+    }
+  }
+  if ($vols.Count -eq 0) { $vols = @('(no mounted Windows volume)') }
+  [pscustomobject]@{
+    Number = $Disk.Number
+    Model = if ($Disk.FriendlyName) { $Disk.FriendlyName } else { '(unknown model)' }
+    Bus = $Disk.BusType
+    Total = Format-GB $Disk.Size
+    Serial = if ($Disk.SerialNumber) { $Disk.SerialNumber } else { '-' }
+    PartStyle = $Disk.PartitionStyle
+    Health = $Disk.HealthStatus
+    Volumes = $vols
+  }
+}
+
+function Show-DiskDetails($Disk, [string]$Prefix) {
+  $d = Get-DiskDetails $Disk
+  Write-Host ("{0}Disk {1}  {2}  {3} total  Bus={4}  Serial={5}  {6}/{7}" -f $Prefix, $d.Number, $d.Model, $d.Total, $d.Bus, $d.Serial, $d.PartStyle, $d.Health)
+  foreach ($v in $d.Volumes) { Write-Host ("{0}    {1}" -f $Prefix, $v) }
+}
+
 function Select-TargetDisk {
   if ($DiskNumber -ge 0) {
     $disk = Get-Disk -Number $DiskNumber
@@ -454,8 +492,7 @@ function Select-TargetDisk {
     if ($disks.Count -eq 0) { Fail 'no removable disk found; insert the TF card reader first' }
     Write-Host 'Select the target TF card (all data will be erased):'
     for ($i = 0; $i -lt $disks.Count; $i++) {
-      $d = $disks[$i]
-      Write-Host ("  [{0}] Disk {1}  {2}  {3} GB  {4}" -f ($i + 1), $d.Number, $d.FriendlyName, [math]::Round($d.Size / 1GB, 2), $d.BusType)
+      Show-DiskDetails $disks[$i] ("  [{0}] " -f ($i + 1))
     }
     $pick = Read-Host ("Select target disk [1-{0}]" -f $disks.Count)
     if ($pick -notmatch '^\d+$') { Fail 'invalid selection' }
@@ -469,6 +506,7 @@ function Select-TargetDisk {
   if ($disk.BusType -notin @('USB', 'SD', 'MMC')) {
     Fail "refusing: disk $($disk.Number) BusType=$($disk.BusType) is not removable media"
   }
+  Show-DiskDetails $disk 'Selected: '
   return $disk
 }
 
@@ -586,7 +624,7 @@ try {
   $disk = Select-TargetDisk
   $size = (Get-Item -LiteralPath $img).Length
   Write-Host ("Image  : {0} ({1:N0} bytes)" -f $img, $size)
-  Write-Host ("Target : Disk {0}  {1}  {2} GB  Bus={3}" -f $disk.Number, $disk.FriendlyName, [math]::Round($disk.Size / 1GB, 2), $disk.BusType)
+  Show-DiskDetails $disk 'Target : '
   if (-not $Force) {
     $answer = Read-Host 'This will OVERWRITE the disk. Type YES to continue'
     if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return }

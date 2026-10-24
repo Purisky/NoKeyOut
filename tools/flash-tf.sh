@@ -139,6 +139,7 @@ if [ "$CONFIGURE_ONLY" -eq 0 ]; then
 fi
 
 say "Target:   $DEVICE ($DEV_SIZE $DEV_MODEL)"
+lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT,MODEL,SERIAL "$DEVICE" 2>/dev/null || true
 say "Board:    ${BOARD:-—}"
 say "User:     $USER_NAME"
 say "Hostname: $USER_HOSTNAME"
