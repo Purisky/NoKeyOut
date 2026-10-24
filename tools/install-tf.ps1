@@ -36,6 +36,7 @@ param(
   [string]$ImageUrl = '',
   [string]$Sha256 = '',
   [int]$DiskNumber = -1,
+  [string]$Password = '',
   [string]$SevenZip = '',
   [string]$WslDistro = '',
   [switch]$ResolveOnly,
@@ -276,6 +277,14 @@ function Read-PlainPassword([string]$Prompt) {
 }
 
 function New-OfflineBundle([string]$Tmp) {
+  if ($env:NOKEYOUT_BUNDLE_DIR) {
+    $local = [IO.Path]::GetFullPath($env:NOKEYOUT_BUNDLE_DIR)
+    if (-not (Test-Path -LiteralPath (Join-Path $local 'release.tar.gz'))) {
+      Fail "NOKEYOUT_BUNDLE_DIR is missing release.tar.gz: $local"
+    }
+    Say "Using local offline bundle $local"
+    return $local
+  }
   $bundle = Join-Path $Tmp 'bundle'
   New-Item -ItemType Directory -Path $bundle -Force | Out-Null
   $manifestUrl = if ($env:NOKEYOUT_RELEASE_URL) { $env:NOKEYOUT_RELEASE_URL } else { 'https://nokeyout.com/releases/stable/manifest.json' }
@@ -348,8 +357,13 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp, [string]$Bundle) {
     Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/flash-tf-wsl.sh" -OutFile $script
   }
 
-  $pw1 = Read-PlainPassword 'Password for nokeyout'
-  $pw2 = Read-PlainPassword 'Confirm password'
+  if ($Password) {
+    $pw1 = $Password
+    $pw2 = $Password
+  } else {
+    $pw1 = Read-PlainPassword 'Password for nokeyout'
+    $pw2 = Read-PlainPassword 'Confirm password'
+  }
   if ($pw1 -ne $pw2) { Fail 'passwords do not match' }
   if (-not $pw1) { Fail 'empty password' }
 
@@ -359,16 +373,27 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp, [string]$Bundle) {
 
   $old = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
-  try { $hash = ($pw1 | & $wslInfo.Exe @wslArgs openssl passwd -6 -stdin 2>$null).Trim() } finally { $ErrorActionPreference = $old }
+  $pwFile = Join-Path $Tmp 'nokeyout-pw.txt'
+  [IO.File]::WriteAllText($pwFile, $pw1, (New-Object Text.UTF8Encoding($false)))
+  $wslPw = ConvertTo-WslPath $pwFile
+  $hashCmd = "openssl passwd -6 -stdin < '$wslPw'"
+  try { $hash = (& $wslInfo.Exe @wslArgs sh -c $hashCmd 2>$null).Trim() } finally { $ErrorActionPreference = $old }
   $pw1 = $null
   $pw2 = $null
   if ($hash -notmatch '^\$6\$') { Fail 'cannot hash password via WSL openssl' }
 
-  $wslScript = ConvertTo-WslPath $script
+  $lfScript = Join-Path $Tmp 'flash-tf-wsl.sh'
+  $text = [IO.File]::ReadAllText($script)
+  $text = $text -replace "`r`n", "`n"
+  [IO.File]::WriteAllText($lfScript, $text, (New-Object Text.UTF8Encoding($false)))
+  $wslScript = ConvertTo-WslPath $lfScript
   $wslImg = ConvertTo-WslPath $Img
   Say 'Injecting user, SSH and firstboot into the image (WSL2)'
+  $hashFile = Join-Path $Tmp 'nokeyout-hash.txt'
+  [IO.File]::WriteAllText($hashFile, $hash, (New-Object Text.UTF8Encoding($false)))
+  $wslHash = ConvertTo-WslPath $hashFile
   $wslBundle = ConvertTo-WslPath $Bundle
-  $run = $wslArgs + @('bash', $wslScript, $wslImg, $hash, 'nokeyout', 'nokeyout', $HostLang, $wslBundle)
+  $run = $wslArgs + @('bash', $wslScript, $wslImg, $wslHash, 'nokeyout', 'nokeyout', $HostLang, $wslBundle)
   $wslErr = Join-Path $Tmp 'wsl.err'
   $old = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
@@ -551,7 +576,7 @@ function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
     $src = [IO.File]::OpenRead($Img)
     $path = "\\.\PhysicalDrive$($Disk.Number)"
     try {
-      $dst = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+      $dst = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None, 1048576, [IO.FileOptions]::WriteThrough)
     } catch {
       Start-Sleep -Seconds 1
       $dst = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
@@ -569,7 +594,7 @@ function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
         $next = $pct + 1
       }
     }
-    $dst.Flush()
+    try { $dst.Flush($true) } catch { $dst.Flush() }
   } catch {
     throw ("write failed: {0}`nClose Explorer/antivirus windows or re-plug the card, then retry." -f $_.Exception.Message)
   } finally {
@@ -577,6 +602,24 @@ function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
     if ($src) { $src.Close() }
     Write-Progress -Activity 'Writing image' -Completed
   }
+
+  Start-Sleep -Seconds 2
+  $srcCheck = [IO.File]::OpenRead($Img)
+  try {
+    $want = New-Object byte[] 1048576
+    $n1 = $srcCheck.Read($want, 0, $want.Length)
+    $gotStream = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+      $got = New-Object byte[] 1048576
+      $n2 = $gotStream.Read($got, 0, $got.Length)
+    } finally { $gotStream.Close() }
+    if ($n1 -ne $n2) { throw "card read-back length mismatch: wrote $n1, read $n2" }
+    for ($i = 0; $i -lt $n1; $i++) {
+      if ($want[$i] -ne $got[$i]) { throw "card read-back mismatch at byte $i; the card/reader did not retain the write" }
+    }
+  } finally { $srcCheck.Close() }
+  Say 'Verified card read-back (first 1 MiB)'
+  return $true
   return $true
 }
 

@@ -199,7 +199,7 @@ run "chown -R nokeyout:nokeyout /var/lib/nokeyout/app /var/lib/nokeyout/secrets 
 run "systemctl start nokeyout-user-button-gpio.service || true"
 run "chown nokeyout:nokeyout /var/lib/nokeyout 2>/dev/null || true"
 run "chmod 700 /var/lib/nokeyout/secrets /var/lib/nokeyout/tls"
-run "chown root:nokeyout $ETC/panel.env; chmod 640 $ETC/panel.env"
+run "touch $ETC/panel.env; chown root:nokeyout $ETC/panel.env; chmod 640 $ETC/panel.env"
 
 say "6/7 配置与 systemd"
 # 登录认证走 C 版 PAM helper（sudo -n nokeyout-auth），**不依赖 python3/pam 模块**。

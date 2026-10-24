@@ -191,7 +191,7 @@ LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
 mkdir -p /var/lib/nokeyout
 [ -e /var/lib/nokeyout/switch-state ] || echo unlocked > /var/lib/nokeyout/switch-state
 
-if [ ! -f /var/lib/nokeyout/.dt-overlay-done ] && [ ! -e /dev/spidev1.1 ]; then
+if [ ! -f /var/lib/nokeyout/.dt-overlay-done ] && ! ls /dev/spidev*.1 >/dev/null 2>&1; then
   mkdir -p /var/lib/nokeyout
   if command -v dtc >/dev/null 2>&1 && [ -d /boot/dtb ]; then
     cat > /tmp/nokeyout-screen.dts <<'DTS'
@@ -243,7 +243,37 @@ fi
   [ -x "$B/panel" ] && "$B/panel" screen-msg error -1 "$LANG" || true
   exit 1
 }
-NOKEYOUT_SCREEN=1 sh "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
+install -d /etc/nokeyout
+[ -f /etc/nokeyout/panel.env ] || { touch /etc/nokeyout/panel.env; chown root:nokeyout /etc/nokeyout/panel.env; chmod 640 /etc/nokeyout/panel.env; }
+NOKEYOUT_SCREEN=1 bash "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
+
+# --- NoKeyOut post-install fixes ---------------------------------
+if [ -x /var/lib/nokeyout/app/panel-go ] && [ -f /etc/nokeyout/panel.env ]; then
+  SPI_DEV=$(ls /dev/spidev*.1 2>/dev/null | head -1 || true)
+  [ -n "$SPI_DEV" ] || SPI_DEV=/dev/spidev0.1
+  sed -i 's/^# SCREEN_BACKEND=.*/SCREEN_BACKEND=st7789/' /etc/nokeyout/panel.env 2>/dev/null || true
+  sed -i "s#^# SCREEN_SPI=.*#SCREEN_SPI=$SPI_DEV#" /etc/nokeyout/panel.env 2>/dev/null || true
+  sed -i 's/^# SCREEN_DC=.*/SCREEN_DC=128/' /etc/nokeyout/panel.env 2>/dev/null || true
+  sed -i 's/^# SCREEN_RST=.*/SCREEN_RST=140/' /etc/nokeyout/panel.env 2>/dev/null || true
+  sed -i 's/^# SCREEN_MADCTL=.*/SCREEN_MADCTL=0x70/' /etc/nokeyout/panel.env 2>/dev/null || true
+  sed -i 's/^# SCREEN_INVERT=.*/SCREEN_INVERT=1/' /etc/nokeyout/panel.env 2>/dev/null || true
+  grep -q '^SCREEN_BACKEND=' /etc/nokeyout/panel.env || echo 'SCREEN_BACKEND=st7789' >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_SPI=' /etc/nokeyout/panel.env || echo "SCREEN_SPI=$SPI_DEV" >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_DC=' /etc/nokeyout/panel.env || echo 'SCREEN_DC=128' >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_RST=' /etc/nokeyout/panel.env || echo 'SCREEN_RST=140' >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_MADCTL=' /etc/nokeyout/panel.env || echo 'SCREEN_MADCTL=0x70' >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_INVERT=' /etc/nokeyout/panel.env || echo 'SCREEN_INVERT=1' >> /etc/nokeyout/panel.env
+  cat > /etc/udev/rules.d/50-nokeyout-screen.rules <<'UDEV'
+KERNEL=="spidev*.1", GROUP="nokeyout", MODE="0660"
+UDEV
+  udevadm control --reload-rules 2>/dev/null || true
+  chown nokeyout:nokeyout /dev/spidev*.1 2>/dev/null || true
+  chmod 660 /dev/spidev*.1 2>/dev/null || true
+  systemctl restart nokeyout-screen-gpio.service 2>/dev/null || true
+  sudo -u nokeyout /var/lib/nokeyout/app/panel-go screen-gate pass 2>/dev/null || true
+  systemctl restart nokeyout-panel 2>/dev/null || true
+fi
+
 mkdir -p /var/lib/nokeyout
 touch /var/lib/nokeyout/.firstboot-done
 systemctl disable nokeyout-firstboot.service 2>/dev/null || true
