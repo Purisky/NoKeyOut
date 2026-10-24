@@ -510,6 +510,18 @@ function Select-TargetDisk {
   return $disk
 }
 
+function Dismount-DiskVolumes([int]$DiskNumber) {
+  $parts = @(Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue)
+  foreach ($p in $parts) {
+    if ($p.DriveLetter) {
+      $letter = "$($p.DriveLetter):"
+      & "$env:SystemRoot\System32\mountvol.exe" $letter /P 2>$null | Out-Null
+      Remove-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $p.PartitionNumber -AccessPath ($letter + '\') -ErrorAction SilentlyContinue
+    }
+  }
+  Start-Sleep -Milliseconds 700
+}
+
 function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
   $size = (Get-Item -LiteralPath $Img).Length
   if ($size -gt $Disk.Size) { Fail ("image is larger than the target disk ({0:N0} > {1:N0} bytes)" -f $size, $Disk.Size) }
@@ -524,27 +536,19 @@ function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
   }
 
   try { Set-Disk -Number $Disk.Number -IsReadOnly $false -ErrorAction SilentlyContinue } catch { }
-  try {
-    Set-Disk -Number $Disk.Number -IsOffline $true -ErrorAction Stop
-  } catch {
-    Write-Warning "could not take disk offline: $($_.Exception.Message)"
-    Get-Partition -DiskNumber $Disk.Number -ErrorAction SilentlyContinue | ForEach-Object {
-      if ($_.DriveLetter) {
-        Remove-PartitionAccessPath -DiskNumber $Disk.Number -PartitionNumber $_.PartitionNumber -AccessPath ($_.DriveLetter + ':\') -ErrorAction SilentlyContinue
-      }
-    }
-  }
+  Dismount-DiskVolumes $Disk.Number
 
   $src = $null
   $dst = $null
   try {
     $src = [IO.File]::OpenRead($Img)
-    $dst = New-Object IO.FileStream(
-      "\\.\PhysicalDrive$($Disk.Number)",
-      [IO.FileMode]::Open,
-      [IO.FileAccess]::Write,
-      [IO.FileShare]::None
-    )
+    $path = "\\.\PhysicalDrive$($Disk.Number)"
+    try {
+      $dst = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    } catch {
+      Start-Sleep -Seconds 1
+      $dst = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+    }
 
     $buf = New-Object byte[] (4 * 1MB)
     $done = 0L
@@ -559,11 +563,12 @@ function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
       }
     }
     $dst.Flush()
+  } catch {
+    throw ("write failed: {0}`nClose Explorer/antivirus windows or re-plug the card, then retry." -f $_.Exception.Message)
   } finally {
     if ($dst) { $dst.Close() }
     if ($src) { $src.Close() }
     Write-Progress -Activity 'Writing image' -Completed
-    Set-Disk -Number $Disk.Number -IsOffline $false -ErrorAction SilentlyContinue
   }
   return $true
 }
