@@ -626,6 +626,22 @@ try {
     return
   }
 
+  $bundle = $null
+  if (-not $NoDeploy) {
+    if (-not (Find-WslDistro $WslDistro)) {
+      Fail 'WSL2 is required for offline first boot; use -NoDeploy to write the Armbian image only'
+    }
+    $bundle = New-OfflineBundle $tmp
+    $helper = Join-Path $PSScriptRoot 'flash-tf-wsl.sh'
+    if (-not (Test-Path -LiteralPath $helper)) {
+      $helper = Join-Path $tmp 'flash-tf-wsl.sh'
+      if (-not (Test-Path -LiteralPath $helper)) {
+        Say 'Downloading flash-tf-wsl.sh'
+        Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/flash-tf-wsl.sh" -OutFile $helper
+      }
+    }
+  }
+
   $disk = Select-TargetDisk
   $size = (Get-Item -LiteralPath $img).Length
   Write-Host ("Image  : {0} ({1:N0} bytes)" -f $img, $size)
@@ -635,13 +651,6 @@ try {
     if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return }
   }
 
-  $bundle = $null
-  if (-not $NoDeploy) {
-    if (-not (Find-WslDistro $WslDistro)) {
-      Fail 'WSL2 is required for offline first boot; use -NoDeploy to write the Armbian image only'
-    }
-    $bundle = New-OfflineBundle $tmp
-  }
   $deployed = Set-ImageFirstboot $img $tmp $bundle
   $ok = Write-RawImage $img $disk -Confirmed
   if (-not $ok) { return }
