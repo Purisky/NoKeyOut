@@ -325,6 +325,13 @@ function New-OfflineBundle([string]$Tmp) {
     $installer = Join-Path $bundle 'install-nokeyout.sh'
     Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/install-nokeyout.sh" -OutFile $installer
   }
+  $fbhtml = Join-Path $PSScriptRoot 'firstboot.html'
+  if (-not (Test-Path -LiteralPath $fbhtml)) {
+    $fbhtml = Join-Path $bundle 'firstboot.html'
+    try { Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/firstboot.html" -OutFile $fbhtml } catch { }
+  }
+  if (Test-Path -LiteralPath $fbhtml) { Copy-Item -LiteralPath $fbhtml -Destination (Join-Path $bundle 'firstboot.html') -Force }
+
   $overlay = Join-Path $PSScriptRoot 'nokeyout-screen.dtbo'
   if (-not (Test-Path -LiteralPath $overlay)) {
     $overlay = Join-Path $bundle 'nokeyout-screen.dtbo'

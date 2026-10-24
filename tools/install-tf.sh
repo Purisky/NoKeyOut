@@ -175,6 +175,11 @@ PY
     curl -fsSL "$TOOLS_BASE/install-nokeyout.sh" -o "$BUNDLE/install-nokeyout.sh" || die "cannot fetch install-nokeyout.sh"
   fi
   chmod 0755 "$BUNDLE/install-nokeyout.sh"
+  if [ -f "$HERE/../device/panel/web/firstboot.html" ]; then
+    cp "$HERE/../device/panel/web/firstboot.html" "$BUNDLE/firstboot.html"
+  else
+    curl -fsSL "$TOOLS_BASE/firstboot.html" -o "$BUNDLE/firstboot.html" || true
+  fi
   if [ -f "$HERE/nokeyout-screen.dtbo" ]; then
     cp "$HERE/nokeyout-screen.dtbo" "$BUNDLE/nokeyout-screen.dtbo"
   else
@@ -251,6 +256,7 @@ NOKEYOUT_SCREEN=1 bash "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
 if [ -x /var/lib/nokeyout/app/panel-go ] && [ -f /etc/nokeyout/panel.env ]; then
   SPI_DEV=$(ls /dev/spidev*.1 2>/dev/null | head -1 || true)
   [ -n "$SPI_DEV" ] || SPI_DEV=/dev/spidev0.1
+  [ -f "$B/firstboot.html" ] && cp "$B/firstboot.html" /var/lib/nokeyout/app/web/firstboot.html && chown nokeyout:nokeyout /var/lib/nokeyout/app/web/firstboot.html
   sed -i 's/^# SCREEN_BACKEND=.*/SCREEN_BACKEND=st7789/' /etc/nokeyout/panel.env 2>/dev/null || true
   sed -i "s#^# SCREEN_SPI=.*#SCREEN_SPI=$SPI_DEV#" /etc/nokeyout/panel.env 2>/dev/null || true
   sed -i 's/^# SCREEN_DC=.*/SCREEN_DC=128/' /etc/nokeyout/panel.env 2>/dev/null || true

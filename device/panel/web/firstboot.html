@@ -37,21 +37,10 @@
 <button class="lang" id="nklang">English</button>
 <form class="card" id="wiz" onsubmit="return false">
   <h1>NoKeyOut 首启向导</h1>
-  <p class="muted">四步：改口令 → 加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。</p>
+  <p class="muted">三步：加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。</p>
   <div class="steps" id="stepsBar">
-    <span data-s="1">① 口令</span><span data-s="2">② 供应商</span><span data-s="3">③ 客户端密钥</span><span data-s="4">④ 完成</span>
+    <span data-s="2">① 供应商</span><span data-s="3">② 客户端密钥</span><span data-s="4">③ 完成</span>
   </div>
-
-  <section id="s1">
-    <label>当前口令</label>
-    <input id="old" type="password" autocomplete="current-password">
-    <label>新口令（≥12 位；将成为 SSH / 解锁 / 登录的同一口令）</label>
-    <input id="new" type="password" autocomplete="new-password">
-    <label>确认新口令</label>
-    <input id="new2" type="password" autocomplete="new-password">
-    <button id="b1">下一步</button>
-    <div class="err" id="e1"></div>
-  </section>
 
   <section id="s2" class="hide">
     <label>供应商预设</label>
@@ -92,8 +81,9 @@ const NK = { lang: 'zh' };
 NK.I18N = {
   "NoKeyOut · 首启向导": "NoKeyOut · First boot",
   "NoKeyOut 首启向导": "NoKeyOut first boot",
-  "四步：改口令 → 加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。":
-    "Four steps: password → provider → client key → done. This page then closes by itself.",
+  "三步：加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。":
+    "Three steps: provider → client key → done. This page then closes by itself.",
+  "① 供应商": "① Provider", "② 客户端密钥": "② Client key", "③ 完成": "③ Done",
   "① 口令": "① Password", "② 供应商": "② Provider", "③ 客户端密钥": "③ Client key", "④ 完成": "④ Done",
   "当前口令": "Current password",
   "新口令（≥12 位；将成为 SSH / 解锁 / 登录的同一口令）":
@@ -158,7 +148,7 @@ NK.switchLang = async () => {
 const $ = s => document.querySelector(s);
 const err = (id, m) => { $(id).textContent = m || ''; };
 function show(n) {
-  [1,2,3,4].forEach(i => $('#s'+i).classList.toggle('hide', i !== n));
+  [2,3,4].forEach(i => $('#s'+i).classList.toggle('hide', i !== n));
   document.querySelectorAll('#stepsBar span').forEach(s =>
     s.classList.toggle('on', +s.dataset.s === n));
 }
@@ -168,15 +158,6 @@ async function post(path, body) {
   let j = {}; try { j = await r.json(); } catch {}
   return { ok: r.ok, j };
 }
-$('#b1').onclick = async () => {
-  err('#e1'); const a = old.value, b = document.getElementById('new').value;
-  if (!a || !b) return err('#e1', NK.t('两项都填'));
-  if (b !== new2.value) return err('#e1', NK.t('两次新口令不一致'));
-  if (b.length < 12) return err('#e1', NK.t('新口令至少 12 位'));
-  const { ok, j } = await post('/api/firstboot/password', { old: a, new: b });
-  if (!ok) return err('#e1', j.error || NK.t('失败'));
-  show(2);
-};
 $('#b2').onclick = async () => {
   err('#e2'); const p = preset.value, k = pkey.value.trim();
   if (p === 'other') return err('#e2', NK.t('自定义预设请在管理控制台 → Providers 添加'));
@@ -204,7 +185,7 @@ $('#b3').onclick = async () => {
   $('#b3').onclick = () => show(4);
 };
 $('#b4').onclick = async () => { await post('/api/firstboot/done', {}); location.href = '/portal'; };
-show(1);
+show(2);
 </script>
 </body>
 </html>

@@ -28,6 +28,7 @@ mkdir -p "$OUT/tools"
 for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-tf.ps1 boards.json nokeyout-screen.dtbo; do
   cp "$ROOT/tools/$f" "$OUT/tools/$f"
 done
+[ -f "$ROOT/device/panel/web/firstboot.html" ] && cp "$ROOT/device/panel/web/firstboot.html" "$OUT/tools/firstboot.html"
 
 REL_DIR="${NOKEYOUT_RELEASES_DIR:-$ROOT/releases}"
 if [ -d "$REL_DIR/stable" ]; then

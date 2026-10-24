@@ -50,7 +50,7 @@ for line in ${SCREEN_DC:-128} ${SCREEN_RST:-140}; do
   d="/sys/class/gpio/gpio$line"
   [ -d "$d" ] || echo "$line" > /sys/class/gpio/export || continue
   echo out > "$d/direction" || continue
-  chown -R nokeyout:nokeyout "$d" 2>/dev/null || true
+  chmod 666 "$d/direction" "$d/value" 2>/dev/null || true
 done
 exit 0
 EOS
