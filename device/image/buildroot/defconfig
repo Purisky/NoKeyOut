@@ -1,0 +1,51 @@
+# NoKeyOut device image defconfig（Buildroot 2026.05.3）
+#
+# 目标：RK3588S（Orange Pi 5 Max）最小 rootfs。内核/引导链来自 BSP（见 ../bsp/
+# fetch-bsp.sh），Buildroot 只负责 rootfs——因此 BR2_LINUX_KERNEL 不启用。
+# musl：与静态件同一哲学（小、无 glibc 负担）；C helper 的 libpam 在 musl 下可用
+# （Alpine 同款组合）。
+BR2_aarch64=y
+BR2_TOOLCHAIN_BUILDROOT_MUSL=y
+BR2_TARGET_GENERIC_HOSTNAME="nokeyout"
+BR2_TARGET_GENERIC_ISSUE="NoKeyOut device (Buildroot + RK3588S)"
+
+# 不编内核：boot/Image 与 dtb 由 assemble-image.sh 从 BSP 落位
+# BR2_LINUX_KERNEL=n
+
+# 基础
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_IPROUTE2=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_E2FSPROGS=y
+BR2_PACKAGE_TAR=y
+BR2_PACKAGE_GZIP=y
+BR2_PACKAGE_XZ=y
+BR2_PACKAGE_PROCPS_NG=y
+
+# NoKeyOut 运行期依赖
+BR2_PACKAGE_OPENSSL=y
+# 2026.05 起 openssl 拆包：BR2_PACKAGE_OPENSSL=虚拟选择器（库），CLI 二进制要显式开
+BR2_PACKAGE_LIBOPENSSL_BIN=y
+# 首启脚本（setup.sh/nokeyout-cert.sh/nokeyout-upgrade）均为 bash
+# （数组 + set -euo pipefail），镜像内必须有 bash（rcS 仍走 busybox sh）。
+# bash 藏在 BUSYBOX_SHOW_OTHERS 后面（busybox 已提供 sh），要先开这个开关
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
+BR2_PACKAGE_BASH=y
+# busybox 补充 applet：首启向导 chpasswd、脚本 stat/pgrep/getent
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(CONFIG_DIR)/busybox.fragment"
+# 2026.05 起 curl 拆包：libcurl 库 + 独立 curl 二进制（旧 BR2_PACKAGE_CURL 是 legacy 别名）
+BR2_PACKAGE_LIBCURL=y
+BR2_PACKAGE_LIBCURL_CURL=y
+BR2_PACKAGE_SUDO=y
+BR2_PACKAGE_LINUX_PAM=y
+BR2_PACKAGE_LIBAUDIT=y
+BR2_PACKAGE_LIBCAP_NG=y
+BR2_PACKAGE_DROPBEAR=y
+
+# rootfs 输出 tar（assemble-image.sh 装进 ext4）
+BR2_TARGET_ROOTFS_TAR=y
+# 不产 ext4/squashfs（分区镜像由 assemble-image.sh 自己格式化）
+# BR2_TARGET_ROOTFS_EXT2=n
+
+# 国内源码走缓存镜像（njubuildroot download cache），避免外网超时
+BR2_PRIMARY_SITE="https://mirrors.nju.edu.cn/buildroot"

@@ -1,0 +1,64 @@
+#!/bin/busybox sh
+# /etc/init.d/rcS —— NoKeyOut 设备启动（busybox init，无 systemd）
+#
+# 顺序：主机名/网络 → 关键目录与文件权限 → magpie（网关）→ panel
+# （panel 内含 8799 switchd 契约）。服务挂了由监管循环拉起。
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sys /sys 2>/dev/null
+mount -t devtmpfs dev /dev 2>/dev/null
+mkdir -p /run /var/log /tmp
+hostname nokeyout
+
+# ---- 网络：静态 IP（优先 /etc/nokeyout/network.conf，缺省为 RFC 5737 占位地址）
+IP=192.0.2.10; GW=192.0.2.1
+[ -r /etc/nokeyout/network.conf ] && . /etc/nokeyout/network.conf
+ip link set lo up 2>/dev/null
+ip link set eth0 up 2>/dev/null
+ip addr add "$IP/24" dev eth0 2>/dev/null
+[ -n "$GW" ] && ip route add default via "$GW" dev eth0 2>/dev/null
+
+# ---- 目录与属主（与 setup.sh 一致：panel 以 nokeyout 跑，magpie 以 65532 跑）
+mkdir -p /var/lib/nokeyout/app /var/lib/nokeyout/secrets /var/lib/nokeyout/tls
+mkdir -p /var/lib/nokeyout/magpie-config /var/lib/nokeyout/switch-state.dir
+# 用户/组（幂等；直接写 passwd/group——busybox 的 useradd 与 GNU 选项方言不同）
+# panel 以 nokeyout 跑，magpie 以 65532(magpie-rt) 跑（与 setup.sh/unit 约定一致）
+grep -q '^nokeyout:' /etc/passwd 2>/dev/null || \
+  echo 'nokeyout:x:1000:1000:NoKeyOut Panel:/var/lib/nokeyout:/usr/sbin/nologin' >> /etc/passwd
+grep -q '^nokeyout:' /etc/group 2>/dev/null || \
+  echo 'nokeyout:x:1000:' >> /etc/group
+grep -q '^magpie-rt:' /etc/passwd 2>/dev/null || \
+  echo 'magpie-rt:x:65532:65532:Magpie runtime:/var/lib/nokeyout:/usr/sbin/nologin' >> /etc/passwd
+grep -q '^magpie-rt:' /etc/group 2>/dev/null || \
+  echo 'magpie-rt:x:65532:' >> /etc/group
+chown -R nokeyout:nokeyout /var/lib/nokeyout/app /var/lib/nokeyout/secrets /var/lib/nokeyout/tls
+chown -R 65532:65532 /var/lib/nokeyout/magpie-config
+touch /var/lib/nokeyout/switch-state 2>/dev/null
+
+# ---- 服务监管：挂了 1s 后拉起（等价 Restart=on-failure）
+supervise() { # $1=名字 $2=可执行 $3=运行用户
+  while :; do
+    if [ -n "$3" ]; then
+      setpriv --reuid "$(id -u "$3")" --regid "$(id -g "$3")" --clear-groups \
+        env HOME=/var/lib/nokeyout/magpie-config/home \
+            XDG_CONFIG_HOME=/var/lib/nokeyout/magpie-config \
+            XDG_CACHE_HOME=/var/lib/nokeyout/magpie-config/cache \
+            MAGPIE_ADDR=0.0.0.0:3425 \
+            MAGPIE_PUBLIC_URL="http://$IP:3425" \
+        "$2" >>/var/log/nokeyout.log 2>&1
+    else
+      "$2" >>/var/log/nokeyout.log 2>&1
+    fi
+    echo "$(date -Is) $1 exited rc=$? — restart" >>/var/log/nokeyout.log
+    sleep 1
+  done &
+}
+
+supervise magpie     /usr/local/bin/magpie           magpie-rt
+supervise panel      /var/lib/nokeyout/app/panel-go  nokeyout
+
+# dropbear（SSH）
+[ -x /usr/sbin/dropbear ] && /usr/sbin/dropbear -E -R 2>/dev/null
+
+echo "nokeyout: services starting (panel https://$IP:8443)" > /dev/console 2>/dev/null || true
+exit 0

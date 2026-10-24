@@ -1,0 +1,15 @@
+{
+  "provider": "armbian",
+  "index": "https://github.armbian.com/armbian-images.json",
+  "images": {
+    "nanopi-neo3-plus": {
+      "armbian": "nanopi-neo3-plus",
+      "variant": "minimal",
+      "branch": "current"
+    }
+  },
+  "boards": {
+    "neo3plus": { "name": "NanoPi NEO3 Plus", "image": "nanopi-neo3-plus" },
+    "nanopi-neo3-plus": { "name": "NanoPi NEO3 Plus", "image": "nanopi-neo3-plus" }
+  }
+}

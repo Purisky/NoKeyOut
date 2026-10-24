@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoKeyOut · 首启向导</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+         display: grid; place-items: center; min-height: 100vh; margin: 0; }
+  .card { width: 460px; padding: 26px; border: 1px solid var(--border, #8884);
+          border-radius: 12px; background: var(--surface, #8881); }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .steps { display: flex; gap: 6px; margin: 14px 0 18px; font-size: 12px; color: var(--muted, #888); }
+  .steps b { color: inherit; }
+  .steps .on { color: var(--accent, #06c); font-weight: 600; }
+  label { display: block; font-size: 13px; margin: 12px 0 4px; color: var(--muted, #888); }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px 10px; font: inherit;
+          border: 1px solid var(--border, #8886); border-radius: 8px; background: transparent; color: inherit; }
+  button { width: 100%; margin-top: 16px; padding: 10px; font: inherit; cursor: pointer;
+           border: 0; border-radius: 8px; background: var(--accent, #06c); color: #fff; }
+  .ghost { background: transparent; border: 1px solid var(--border, #8886); color: inherit; }
+  .err { min-height: 18px; margin-top: 10px; font-size: 13px; color: var(--error, #e5484d); }
+  .ok { color: var(--success, #30a46c); font-size: 13px; }
+  textarea { width: 100%; box-sizing: border-box; height: 92px; font: 12px/1.4 ui-monospace, monospace;
+             padding: 8px; border: 1px solid var(--border, #8886); border-radius: 8px;
+             background: transparent; color: inherit; }
+  .kv { font-size: 13px; margin: 6px 0; }
+  .hide { display: none; }
+  .muted { color: var(--muted, #888); font-size: 12px; }
+  .lang { position: fixed; top: 10px; right: 12px; width: auto; margin: 0; padding: 4px 10px;
+          font-size: 12px; border: 1px solid var(--border, #8886); border-radius: 99px;
+          background: transparent; color: inherit; }
+</style>
+</head>
+<body>
+<button class="lang" id="nklang">English</button>
+<form class="card" id="wiz" onsubmit="return false">
+  <h1>NoKeyOut 首启向导</h1>
+  <p class="muted">四步：改口令 → 加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。</p>
+  <div class="steps" id="stepsBar">
+    <span data-s="1">① 口令</span><span data-s="2">② 供应商</span><span data-s="3">③ 客户端密钥</span><span data-s="4">④ 完成</span>
+  </div>
+
+  <section id="s1">
+    <label>当前口令</label>
+    <input id="old" type="password" autocomplete="current-password">
+    <label>新口令（≥12 位；将成为 SSH / 解锁 / 登录的同一口令）</label>
+    <input id="new" type="password" autocomplete="new-password">
+    <label>确认新口令</label>
+    <input id="new2" type="password" autocomplete="new-password">
+    <button id="b1">下一步</button>
+    <div class="err" id="e1"></div>
+  </section>
+
+  <section id="s2" class="hide">
+    <label>供应商预设</label>
+    <select id="preset">
+      <option>anthropic</option><option>openai</option><option>google-gemini</option>
+      <option>deepseek</option><option>moonshot</option><option>zhipu</option>
+      <option>minimax</option><option>stepfun</option><option>qwen</option>
+      <option>openrouter</option><option>siliconflow</option><option>other</option>
+    </select>
+    <label>该供应商的 API Key（只写入本设备，永不出网到你机器）</label>
+    <input id="pkey" placeholder="sk-…">
+    <button id="b2">添加并下一步</button>
+    <div class="err" id="e2"></div>
+  </section>
+
+  <section id="s3" class="hide">
+    <div class="kv" style="font-size:13px;margin-bottom:8px">到 <b>magpie</b> 页签 → <b>Gateway keys → Add a key</b> 创建你的第一把客户端密钥（名称随意，如「主力开发机」）。
+    完整密钥只显示一次——复制它，粘到下面验证。</div>
+    <label>客户端密钥（sk-…）</label>
+    <input id="kkey" placeholder="粘贴 magpie 控制台创建的密钥">
+    <button id="b3">验证并完成</button>
+    <div class="err" id="e3"></div>
+    <div id="k3" class="hide">
+      <div class="ok">✅ 密钥可用。把下面配置写进 omp 开发机（~/.omp/agent/nokeyout-provider.json）：</div>
+      <textarea id="kcfg" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="s4" class="hide">
+    <div class="ok">✅ 初始化完成。</div>
+    <p class="kv">之后：浏览器 <b>&lt;设备IP&gt;:8443</b> 用账号口令登录管理面；物理开关控制管理面阻隔。</p>
+    <button id="b4">进入管理面</button>
+  </section>
+</form>
+<script>
+/* 界面语言与设备屏同源：GET/POST /api/lang（server.lang()）。字典按「中文原文」索引。 */
+const NK = { lang: 'zh' };
+NK.I18N = {
+  "NoKeyOut · 首启向导": "NoKeyOut · First boot",
+  "NoKeyOut 首启向导": "NoKeyOut first boot",
+  "四步：改口令 → 加供应商 → 建客户端密钥 → 完成。之后本页自动关闭。":
+    "Four steps: password → provider → client key → done. This page then closes by itself.",
+  "① 口令": "① Password", "② 供应商": "② Provider", "③ 客户端密钥": "③ Client key", "④ 完成": "④ Done",
+  "当前口令": "Current password",
+  "新口令（≥12 位；将成为 SSH / 解锁 / 登录的同一口令）":
+    "New password (≥12 chars; becomes the single password for SSH / unlock / sign-in)",
+  "确认新口令": "Confirm new password",
+  "下一步": "Next",
+  "供应商预设": "Provider preset",
+  "该供应商的 API Key（只写入本设备，永不出网到你机器）":
+    "Provider API key (stored on this device only, never leaves for your machine)",
+  "sk-…": "sk-…",
+  "添加并下一步": "Add and continue",
+  "创建你的第一把客户端密钥（名称随意，如「主力开发机」）。":
+    "to create your first client key (any name, e.g. \"main dev box\").",
+  "完整密钥只显示一次——复制它，粘到下面验证。":
+    "The full key is shown once—copy it and paste it below to verify.",
+  "客户端密钥（sk-…）": "Client key (sk-…)",
+  "粘贴 magpie 控制台创建的密钥": "Paste the key created in the magpie console",
+  "验证并完成": "Verify and finish",
+  "密钥可用。把下面配置写进 omp 开发机（~/.omp/agent/nokeyout-provider.json）：":
+    "Key works. Write this config on your omp machine (~/.omp/agent/nokeyout-provider.json):",
+  "初始化完成。": "Setup complete.",
+  "之后：浏览器": "Next: open",
+  "用账号口令登录管理面；物理开关控制管理面阻隔。":
+    "in a browser and sign in with your account password; the physical switch gates admin access.",
+  "进入管理面": "Enter admin panel",
+  "两项都填": "Fill both fields",
+  "两次新口令不一致": "New passwords do not match",
+  "新口令至少 12 位": "New password needs at least 12 chars",
+  "失败": "failed",
+  "自定义预设请在管理控制台 → Providers 添加": "Custom presets: add under console → Providers",
+  "key 必填": "key is required",
+  "先粘贴 magpie 控制台创建的密钥": "Paste the key from the magpie console first",
+  "密钥不可用：": "Key not usable: ",
+  "已验证 → 下一步": "Verified → Next",
+  "English": "中文",
+};
+NK.t = s => (NK.lang === 'zh' ? s : (NK.I18N[s] ?? s));
+NK.apply = () => {
+  document.querySelectorAll('[placeholder]').forEach(el => el.placeholder = NK.t(el.placeholder));
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const edits = [];
+  for (let n; (n = walk.nextNode());) {
+    const s = n.textContent, t = s.trim();
+    if (t && NK.I18N[t]) edits.push([n, s, t]);
+  }
+  for (const [n, s, t] of edits) n.textContent = s.replace(t, NK.t(t));
+  document.documentElement.lang = NK.lang === 'zh' ? 'zh-CN' : 'en';
+};
+NK.switchLang = async () => {
+  try { await fetch('/api/lang', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lang: NK.lang === 'zh' ? 'en' : 'zh' }) }); } catch {}
+  location.reload();
+};
+(async () => {
+  try { NK.lang = (await (await fetch('/api/lang')).json()).lang || 'zh'; } catch {}
+  NK.apply();
+  const b = document.getElementById('nklang');
+  if (b) b.textContent = NK.t('English');
+  if (b) b.onclick = NK.switchLang;
+})();
+
+const $ = s => document.querySelector(s);
+const err = (id, m) => { $(id).textContent = m || ''; };
+function show(n) {
+  [1,2,3,4].forEach(i => $('#s'+i).classList.toggle('hide', i !== n));
+  document.querySelectorAll('#stepsBar span').forEach(s =>
+    s.classList.toggle('on', +s.dataset.s === n));
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  let j = {}; try { j = await r.json(); } catch {}
+  return { ok: r.ok, j };
+}
+$('#b1').onclick = async () => {
+  err('#e1'); const a = old.value, b = document.getElementById('new').value;
+  if (!a || !b) return err('#e1', NK.t('两项都填'));
+  if (b !== new2.value) return err('#e1', NK.t('两次新口令不一致'));
+  if (b.length < 12) return err('#e1', NK.t('新口令至少 12 位'));
+  const { ok, j } = await post('/api/firstboot/password', { old: a, new: b });
+  if (!ok) return err('#e1', j.error || NK.t('失败'));
+  show(2);
+};
+$('#b2').onclick = async () => {
+  err('#e2'); const p = preset.value, k = pkey.value.trim();
+  if (p === 'other') return err('#e2', NK.t('自定义预设请在管理控制台 → Providers 添加'));
+  if (!k) return err('#e2', NK.t('key 必填'));
+  const { ok, j } = await post('/api/firstboot/provider', { preset: p, key: k });
+  if (!ok) return err('#e2', j.error || NK.t('失败'));
+  show(3);
+};
+let GWURL = null;
+(async () => { try { GWURL = (await (await fetch('/api/status')).json()).gatewayUrl; } catch {} })();
+const gwUrl = () => (GWURL || ('http://' + location.hostname + ':3425/v1'));
+
+$('#b3').onclick = async () => {
+  err('#e3'); const k = kkey.value.trim();
+  if (!k) return err('#e3', NK.t('先粘贴 magpie 控制台创建的密钥'));
+  const r = await fetch('/api/keys/test', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: k }) });
+  const j = await r.json();
+  if (!j.ok) return err('#e3', NK.t('密钥不可用：') + (j.error || ('HTTP ' + j.status)));
+  $('#kcfg').value = JSON.stringify({
+    baseUrl: gwUrl(), gatewayKey: k, providerId: 'nokeyout'
+  }, null, 2);
+  $('#k3').classList.remove('hide');
+  $('#b3').textContent = NK.t('已验证 → 下一步');
+  $('#b3').onclick = () => show(4);
+};
+$('#b4').onclick = async () => { await post('/api/firstboot/done', {}); location.href = '/portal'; };
+show(1);
+</script>
+</body>
+</html>

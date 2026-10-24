@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>404 - NoKeyOut</title>
+<meta name="theme-color" content="#0a0c0a">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/nokeyout_16.png">
+<link rel="icon" type="image/png" sizes="20x20" href="/assets/icons/nokeyout_20.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/nokeyout_32.png">
+<link rel="icon" type="image/png" sizes="40x40" href="/assets/icons/nokeyout_40.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/assets/icons/nokeyout_48.png">
+<style>
+  @font-face{font-family:"VT323";src:url("assets/fonts/vt323-latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+  @font-face{font-family:"Silkscreen";src:url("assets/fonts/silkscreen-latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+  :root{
+    color-scheme:dark;
+    --bg:#0a0c0a; --panel:#0f1310; --line:#26332a; --line-2:#3a4c3e;
+    --fg:#dcebdc; --muted:#a3b9a4; --dim:#7f927e; --green:#48e08a; --amber:#ffb454;
+    --pixel:"Silkscreen",ui-monospace,monospace; --term:"VT323",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;background:var(--bg);color:var(--fg);
+       font:20px/1.55 var(--term);-webkit-font-smoothing:none}
+  main{width:min(620px,100%)}
+  .brand{display:flex;align-items:center;gap:10px;font:400 16px/1 var(--pixel);color:var(--fg);text-decoration:none;margin-bottom:22px}
+  .brand .mark{width:16px;height:16px;display:block;flex:none;image-rendering:pixelated;filter:invert(1)}
+  .term{border:2px solid var(--line-2);background:var(--panel);box-shadow:6px 6px 0 #000}
+  .bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:2px solid var(--line);
+       color:var(--dim);font:400 14px/1.2 var(--term);letter-spacing:.08em;text-transform:uppercase}
+  .dot{width:8px;height:8px;background:var(--line-2)}
+  .dot.g{background:var(--green)}
+  .bar span:last-child{margin-left:auto}
+  pre{margin:0;padding:18px 16px 20px;font:18px/1.5 var(--term);color:#bfd3c2;overflow-x:auto}
+  .p{color:var(--green)}
+  .e{color:var(--amber)}
+  .c{color:#86a189}
+  nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
+  a.btn{padding:9px 13px 8px;border:2px solid var(--line-2);font:400 18px/1.3 var(--term);letter-spacing:.05em;
+        text-transform:uppercase;color:var(--fg);text-decoration:none;box-shadow:4px 4px 0 #000;background:var(--panel)}
+  a.btn:hover{border-color:var(--green);color:var(--green)}
+  a.btn.p{background:var(--green);border-color:var(--green);color:#06140c}
+  footer{margin-top:26px;color:var(--dim);font-size:18px}
+</style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/">
+    <img class="mark" src="/assets/icons/nokeyout_16.png" srcset="/assets/icons/nokeyout_16.png 1x, /assets/icons/nokeyout_20.png 1.25x, /assets/icons/nokeyout_32.png 2x, /assets/icons/nokeyout_48.png 3x" width="16" height="16" alt="">
+    nokeyout
+  </a>
+
+  <div class="term">
+    <div class="bar"><span class="dot g"></span><span class="dot"></span><span class="dot"></span><span>404</span></div>
+<pre><span class="p">$</span> curl -I <span class="c">this page</span>
+<span class="e">HTTP/2 404</span>
+
+<span class="c"># nothing here. try:</span>
+<span class="p">&gt;</span> /        home
+<span class="p">&gt;</span> /diy/    assembly walkthrough</pre>
+  </div>
+
+  <nav>
+    <a class="btn p" href="/">Home</a>
+    <a class="btn" href="/diy/?lang=en">Assembly</a>
+    <a class="btn" href="/zh/">中文</a>
+  </nav>
+
+  <footer>Nothing was found. Nothing leaked.</footer>
+</main>
+<script src="assets/pixel-snap.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# nokeyout-upgrade —— 面板「系统」页签的 root 操作包装器（sudoers 白名单放行）
+#
+# 只允许四个动作；所有参数强校验，绝不透传 shell：
+#   backup [passphrase]     备份 /config + panel secrets → /var/backups/nokeyout/panel-backup-<ts>.tar.gz[.enc]
+#   backups                 列备份（名字/字节/mtime，TSV）
+#   restore <file>          从备份恢复（停 magpie → 解包 → 起 magpie；加密备份用 NK_RESTORE_PW）
+#   upgrade <x.y.z>         锁版升级（调 update-magpie.sh；成功后记录 last-good-version）
+#   rollback                升级回 last-good-version（面板显式动作，非自动）
+#   nk-deploy <tar>         同步部署 NoKeyOut 整包（SSH/前台）
+#   nk-deploy-detached <tar> 用 systemd-run 起独立 unit 部署，面板重启不会杀掉更新进程
+#
+# sudoers（/etc/sudoers.d/nokeyout-panel）：
+#   nokeyout ALL=(root) NOPASSWD: /usr/local/bin/nokeyout-magpie-cli, /usr/bin/chpasswd,
+#       /usr/local/bin/nokeyout-auth, /usr/local/bin/nokeyout-upgrade
+set -euo pipefail
+
+UPD="${UPDATE_SCRIPT:-/usr/local/lib/nokeyout/update-magpie.sh}"
+BKDIR=/var/backups/nokeyout
+GOODFILE=/var/lib/nokeyout/last-good-version
+CFG="${NOKEYOUT_CONFIG_DIR:-/home/nokeyout/magpie-config}"
+SECRETS=/var/lib/nokeyout/secrets
+CTR=magpie
+
+say() { printf '\n== %s ==\n' "$*"; }
+wait_health() { # 轮询等待面板起来（重启有窗口，单次 curl 会误判）
+  local i
+  for i in $(seq 1 10); do
+    curl -fsSk -m 5 "https://127.0.0.1:${PANEL_PORT:-8443}/healthz" >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+nk_deploy_finish() {  # $1=回滚点 $2=版本
+  printf '%s\n' "$2" > /var/lib/nokeyout/VERSION
+  say "3/6 重启服务"
+  systemctl daemon-reload
+  systemctl restart nokeyout-panel
+  sleep 3
+  say "4/6 冒烟"
+  OK=1
+  systemctl is-active --quiet nokeyout-panel || { echo "  ❌ nokeyout-panel 未 active"; OK=0; }
+  wait_health || { echo "  ❌ panel healthz 失败"; OK=0; }
+  if systemctl is-active --quiet nokeyout-magpie-binary 2>/dev/null; then
+    # 注意：loopback(127.0.0.1) 免鉴权恒 200，LAN 才 401；这里只要求「有响应」
+    C=$(curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:3425/v1/models)
+    { [ "$C" = 401 ] || [ "$C" = 200 ]; } || { echo "  ❌ 网关 healthcheck 失败（二进制模式，3425 返回 $C）"; OK=0; }
+  elif docker ps --format '{{.Names}}' 2>/dev/null | grep -qx magpie; then
+    docker exec magpie magpie healthcheck >/dev/null 2>&1 || { echo "  ❌ 网关 healthcheck 失败"; OK=0; }
+  else
+    echo "  ⚠️ magpie 不在运行（两种模式都没检测到），跳过网关检查"
+  fi
+  if [ "$OK" != 1 ]; then bash "$0" nk-rollback "$1"; die "冒烟失败，已回滚"; fi
+  say "5/6 记录回滚点"
+  echo "$1" > /var/lib/nokeyout/last-good-nk
+  say "6/6 完成 ✅ NoKeyOut → $2（$1 为回滚点）"
+}
+
+
+die() { echo "nokeyout-upgrade: $*" >&2; exit 3; }
+[ "$(id -u)" = 0 ] || die "must run as root"
+[ $# -ge 1 ] || die "用法: backup|restore|upgrade|rollback"
+
+case "$1" in
+  backup)
+    TS=$(date +%Y%m%d-%H%M%S)
+    OUT="$BKDIR/panel-backup-$TS.tar.gz"
+    install -d -m 700 "$BKDIR"
+    tar czf "$OUT" -C / "$CFG" "$SECRETS" /etc/nokeyout/panel.env
+    chmod 600 "$OUT"
+    if [ $# -ge 2 ]; then
+      PW="$2"
+      [ ${#PW} -ge 8 ] || die "备份口令至少 8 位"
+      export NKEYOUT_BK_PW="$PW"
+      openssl enc -aes-256-cbc -pbkdf2 -salt -in "$OUT" -out "$OUT.enc" -pass env:NKEYOUT_BK_PW
+      rm -f "$OUT"
+      OUT="$OUT.enc"
+      chmod 600 "$OUT"
+      unset NKEYOUT_BK_PW
+    fi
+    echo "$OUT" ;;
+  read)
+    [ $# -eq 2 ] || die "用法: read <文件名>"
+    [[ "$2" =~ ^panel-backup-[0-9-]+\.tar\.gz(\.enc)?$ ]] || die "文件名不合法"
+    [ -f "$BKDIR/$2" ] || die "备份不存在: $2"
+    cat "$BKDIR/$2" ;;
+  backups)
+    install -d "$BKDIR" 2>/dev/null || true
+    for f in "$BKDIR"/panel-backup-*; do
+      [ -e "$f" ] || continue
+      printf '%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c%s "$f")" "$(stat -c%y "$f" | cut -d. -f1)"
+    done ;;
+  restore)
+    [ $# -eq 2 ] || die "用法: restore <文件名>"
+    F="$2"
+    [[ "$F" =~ ^panel-backup-[0-9-]+\.tar\.gz(\.enc)?$ ]] || die "文件名不合法"
+    [ -f "$BKDIR/$F" ] || die "备份不存在: $F"
+    docker stop "$CTR" >/dev/null
+    if [[ "$F" == *.enc ]]; then
+      [ -n "${NK_RESTORE_PW:-}" ] || { docker start "$CTR" >/dev/null; die "加密备份需要 NK_RESTORE_PW"; }
+      openssl enc -d -aes-256-cbc -pbkdf2 -in "$BKDIR/$F" -out /tmp/nk-restore.tar.gz -pass env:NK_RESTORE_PW || \
+        { docker start "$CTR" >/dev/null; die "解密失败"; }
+      tar xzf /tmp/nk-restore.tar.gz -C / && rm -f /tmp/nk-restore.tar.gz
+    else
+      tar xzf "$BKDIR/$F" -C /
+    fi
+    docker start "$CTR" >/dev/null
+    echo "restored $F" ;;
+  upgrade)
+    [ $# -eq 2 ] || die "用法: upgrade <x.y.z>"
+    [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式: x.y.z"
+    if systemctl is-active --quiet nokeyout-magpie-binary 2>/dev/null; then
+      BINUPD="${NOKEYOUT_BIN_UPD:-/usr/local/lib/nokeyout/update-magpie-binary.sh}"
+      [ -x "$BINUPD" ] || die "缺二进制升级脚本 $BINUPD"
+      bash "$BINUPD" "$2" || die "升级失败（已自动回滚）"
+      V=$(/usr/local/bin/magpie --version 2>/dev/null | awk '{print $2}')
+    elif docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CTR"; then
+      [ -x "$UPD" ] || die "缺升级脚本 $UPD"
+      bash "$UPD" "$2" || die "升级失败（已自动回滚）"
+      V=$(docker exec "$CTR" magpie --version 2>/dev/null | awk '{print $2}')
+    else
+      die "magpie 既不在二进制模式也不在容器模式"
+    fi
+    [ -n "$V" ] && printf '%s\n' "$V" > "$GOODFILE"
+    echo "upgraded to $V" ;;
+  rollback)
+    [ -s "$GOODFILE" ] || die "没有 last-good-version 记录"
+    V=$(cat "$GOODFILE")
+    bash "$0" upgrade "$V" ;;
+  nk-deploy-detached)
+    [ $# -eq 2 ] || die "用法: nk-deploy-detached <nokeyout-x.y.z.tar.gz>"
+    command -v systemd-run >/dev/null || die "缺 systemd-run，无法脱离面板 cgroup"
+    F="$2"; [ -f "$F" ] || [ -f "/tmp/$(basename "$F")" ] || die "找不到 $F"
+    UNIT="nokeyout-update-$(date +%Y%m%d%H%M%S)-$$"
+    # 独立 transient unit：不在 nokeyout-panel.service 的 cgroup 里，
+    # 部署脚本重启面板时不会把更新进程一起杀掉。
+    systemd-run --unit="$UNIT" --collect --property=Type=oneshot \
+      --property=TimeoutStartSec=1800 --description="NoKeyOut self-update" \
+      --setenv=NOKEYOUT_SCREEN="${NOKEYOUT_SCREEN:-}" \
+      /usr/local/bin/nokeyout-upgrade nk-deploy "$F"
+    printf '%s\n' "$UNIT"
+    ;;
+  nk-deploy)
+    # 自身会被 setup.sh 覆盖安装；先复制到 /tmp 再执行，避免读到被截断的半截脚本
+    if [ "${NOKEYOUT_REEXEC:-}" != "1" ]; then
+      RUN=/tmp/nokeyout-upgrade-run.$$
+      cp "$(readlink -f "$0")" "$RUN"
+      NOKEYOUT_RUN="$RUN" NOKEYOUT_REEXEC=1 exec bash "$RUN" "$@"
+    fi
+    [ $# -eq 2 ] || die "用法: nk-deploy <nokeyout-x.y.z.tar.gz>"
+    F="$2"; B=$(basename "$F")
+    [[ "$B" =~ ^nokeyout-[0-9A-Za-z._-]+\.tar\.gz$ ]] || die "文件名不合法"
+    [ -f "$F" ] || [ -f "/tmp/$B" ] || die "找不到 $F"
+    SRC="$F"; [ -f "$SRC" ] || SRC="/tmp/$B"
+    TS=$(date +%Y%m%d-%H%M%S); BKP="/var/backups/nokeyout/nk-$TS"
+    install -d -m 700 "$BKP"
+    say "1/6 备份当前版本 → $BKP"
+    tar czf "$BKP/app.tar.gz" -C /var/lib nokeyout/app nokeyout/VERSION 2>/dev/null || true
+    tar czf "$BKP/helpers.tar.gz" -C /usr/local/bin nokeyout-auth nokeyout-magpie-cli nokeyout-upgrade 2>/dev/null || true
+    STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
+    tar xzf "$SRC" -C "$STAGE"
+    NEW="$STAGE/$(ls "$STAGE" | head -1)"
+    [ -f "$NEW/VERSION" ] || die "发布物缺 VERSION"
+    NV=$(cat "$NEW/VERSION")
+    say "2/6 部署 NoKeyOut $NV"
+    # 设备侧已是 Go-only：panel-go/panel 由发布物里的 setup.sh 安装（从
+    # $NEW/../panel-go 取二进制）；这里只覆盖页面。
+    install -m 0644 "$NEW/panel/web/"*.html /var/lib/nokeyout/app/web/
+    # 用发布物里的 setup.sh 做幂等安装（helper/单元/密钥/证书/Go 二进制都走它）
+    # NOKEYOUT_SCREEN 透传：首装时开了屏（opt-in），自升级不能把屏的安装挤掉
+    NOKEYOUT_SCREEN="${NOKEYOUT_SCREEN:-}" bash "$NEW/panel/setup.sh" >/tmp/nk-setup.log 2>&1 || {
+      echo "  setup.sh 失败，日志尾部："; tail -5 /tmp/nk-setup.log
+      bash "${NOKEYOUT_RUN:-$0}" nk-rollback "$BKP"; die "setup.sh 失败，已回滚"; }
+    # setup.sh 可能装了新版 wrapper；本进程是旧代码（/tmp 副本），其冒烟逻辑可能
+    if [ "${NOKEYOUT_STAGE2:-}" != "1" ] && [ -x /usr/local/bin/nokeyout-upgrade ] && \
+       ! cmp -s /usr/local/bin/nokeyout-upgrade "$(readlink -f "$0")"; then
+      say "  wrapper 已更新 → 用新版本续跑部署"
+      NOKEYOUT_STAGE2=1 NK_BKP="$BKP" NK_NEW="$NEW" NK_NV="$NV" NK_SRC="$SRC" \
+        exec /usr/local/bin/nokeyout-upgrade nk-deploy-continue
+    fi
+    nk_deploy_finish "$BKP" "$NV" ;;
+  nk-deploy-continue)
+    BKP="${NK_BKP:-}"; NV="${NK_NV:-}"
+    [ -n "$BKP" ] && [ -n "$NV" ] || die "续跑状态丢失（NK_BKP/NK_NV）"
+    nk_deploy_finish "$BKP" "$NV" ;;
+  nk-rollback)
+    BKP="${2:-$(cat /var/lib/nokeyout/last-good-nk 2>/dev/null || true)}"
+    [ -n "$BKP" ] && [ -f "$BKP/app.tar.gz" ] || die "没有可用的 NoKeyOut 回滚点"
+    say "↩ 回滚 NoKeyOut → $BKP"
+    tar xzf "$BKP/app.tar.gz" -C /var/lib
+    [ -f "$BKP/helpers.tar.gz" ] && tar xzf "$BKP/helpers.tar.gz" -C /usr/local/bin
+    systemctl restart nokeyout-panel
+    sleep 2
+    echo "  已回滚。面板 healthz: $(wait_health && echo OK || echo FAILED)" ;;
+  *) die "未知动作 $1" ;;
+esac

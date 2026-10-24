@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoKeyOut · 关闭模式</title>
+<style>
+  body { font: 15px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+         display: grid; place-items: center; min-height: 100vh; margin: 0; }
+  .c { text-align: center; padding: 32px; }
+  .lock { font-size: 44px; }
+  .muted { color: var(--muted, #888); font-size: 13px; margin-top: 8px; }
+  .lang { position: fixed; top: 10px; right: 12px; font-size: 12px; padding: 4px 10px;
+          border: 1px solid var(--border, #8886); border-radius: 99px; background: transparent;
+          color: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="lang" id="nklang">English</button>
+<div class="c">
+  <div class="lock">🔒</div>
+  <h1>设备处于关闭模式</h1>
+  <p class="muted">管理面已阻隔。将物理开关拨到开启位后刷新本页。<br>网关服务（模型调用）不受影响。</p>
+</div>
+<script>
+/* 界面语言与设备屏同源：GET/POST /api/lang（server.lang()）。字典按「中文原文」索引。 */
+const NK = { lang: 'zh' };
+NK.I18N = {
+  "NoKeyOut · 关闭模式": "NoKeyOut · Locked mode",
+  "设备处于关闭模式": "Device is in locked mode",
+  "管理面已阻隔。将物理开关拨到开启位后刷新本页。":
+    "Admin access is blocked. Flip the physical switch to the open position and reload this page.",
+  "网关服务（模型调用）不受影响。": "The gateway service (model calls) is unaffected.",
+  "English": "中文",
+};
+NK.t = s => (NK.lang === 'zh' ? s : (NK.I18N[s] ?? s));
+NK.apply = () => {
+  document.querySelectorAll('[placeholder]').forEach(el => el.placeholder = NK.t(el.placeholder));
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const edits = [];
+  for (let n; (n = walk.nextNode());) {
+    const s = n.textContent, t = s.trim();
+    if (t && NK.I18N[t]) edits.push([n, s, t]);
+  }
+  for (const [n, s, t] of edits) n.textContent = s.replace(t, NK.t(t));
+  document.documentElement.lang = NK.lang === 'zh' ? 'zh-CN' : 'en';
+};
+NK.switchLang = async () => {
+  try { await fetch('/api/lang', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lang: NK.lang === 'zh' ? 'en' : 'zh' }) }); } catch {}
+  location.reload();
+};
+(async () => {
+  try { NK.lang = (await (await fetch('/api/lang')).json()).lang || 'zh'; } catch {}
+  NK.apply();
+  const b = document.getElementById('nklang');
+  if (b) b.textContent = NK.t('English');
+  if (b) b.onclick = NK.switchLang;
+})();
+</script>
+</body>
+</html>

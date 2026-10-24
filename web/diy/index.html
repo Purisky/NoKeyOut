@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nokeyout</title>
+<meta name="description" content="零安装的网页装机演练：整个页面就是 3D 场景，按真实装配步骤逐步解锁。A zero-install browser build walkthrough: the whole page is the 3D scene, unlocked step by step.">
+<link rel="stylesheet" href="style.css?v=20261024-16">
+<link rel="icon" type="image/png" sizes="16x16" href="../assets/icons/nokeyout_16.png">
+<link rel="icon" type="image/png" sizes="20x20" href="../assets/icons/nokeyout_20.png">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/nokeyout_32.png">
+<link rel="icon" type="image/png" sizes="40x40" href="../assets/icons/nokeyout_40.png">
+<link rel="icon" type="image/png" sizes="48x48" href="../assets/icons/nokeyout_48.png">
+</head>
+<body class="nk-game">
+  <main id="scene" aria-label="3D assembly scene">
+    <canvas id="fx-canvas" aria-hidden="true"></canvas>
+    <div id="bench3d"></div>
+    <div id="bench3d-tip" hidden></div>
+
+    <header id="hud-top">
+      <a class="brand" href="https://www.nokeyout.com/"><img class="brand-mark" src="../assets/icons/nokeyout_16.png" srcset="../assets/icons/nokeyout_16.png 1x, ../assets/icons/nokeyout_20.png 1.25x, ../assets/icons/nokeyout_32.png 2x, ../assets/icons/nokeyout_48.png 3x" width="16" height="16" alt="">nokeyout</a>
+      <a class="github-link" id="hud-github" href="https://github.com/Purisky/NoKeyOut" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </a>
+      <div id="hud-progress">
+        <span id="hud-count">0 / 0</span>
+        <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="13" aria-valuenow="0"></div>
+        <button class="btn small" id="hud-steps-toggle" data-i18n="hud.steps">步骤</button>
+      </div>
+      <div class="hud-actions">
+        <button class="btn small" id="hud-proc" data-i18n="hud.proc">采购清单</button>
+        <button class="btn small" id="sfx-toggle" aria-pressed="true" data-i18n-title="sfx.mute">
+          <svg class="sfx-ico" viewBox="0 0 18 14" aria-hidden="true" focusable="false" shape-rendering="crispEdges">
+            <g class="sfx-on">
+              <rect x="1" y="5" width="3" height="4"/><rect x="4" y="3" width="2" height="8"/><rect x="6" y="2" width="2" height="10"/>
+              <rect x="10" y="4" width="2" height="6"/><rect x="13" y="2" width="2" height="10"/>
+            </g>
+            <g class="sfx-off">
+              <rect x="1" y="5" width="3" height="4"/><rect x="4" y="3" width="2" height="8"/><rect x="6" y="2" width="2" height="10"/>
+              <rect x="10" y="4" width="2" height="2"/><rect x="14" y="4" width="2" height="2"/>
+              <rect x="12" y="6" width="2" height="2"/>
+              <rect x="10" y="8" width="2" height="2"/><rect x="14" y="8" width="2" height="2"/>
+            </g>
+          </svg>
+        </button>
+        <button class="btn small" id="cam-reset" data-i18n="cam.reset">重置视角</button>
+        <button class="btn small" id="cam-top" data-i18n="cam.top">俯视</button>
+        <button class="btn small lang-toggle" id="lang-toggle">EN</button>
+      </div>
+    </header>
+
+    <aside id="step-card" class="hud panel" aria-live="polite">
+      <div class="kicker">
+        <span id="step-group"></span>
+      </div>
+      <h1 id="step-title"></h1>
+      <div id="step-body"></div>
+      <div id="step-controls"></div>
+      <div id="step-feedback" hidden></div>
+      <div id="step-nav">
+        <button class="btn small" id="btn-back" data-i18n="hud.back">← 上一步</button>
+      </div>
+    </aside>
+
+    <div id="wire-tut" class="hud" hidden aria-hidden="true">
+      <span class="wt-dot a"></span>
+      <span class="wt-line a"></span>
+      <div class="wt-box"><span data-i18n="tut.wire">分别点击元件进行连接</span></div>
+      <span class="wt-line b"></span>
+      <span class="wt-dot b"></span>
+    </div>
+
+    <aside id="procurement" class="hud panel" hidden>
+      <div class="drawer-head">
+        <h3 data-i18n="hud.proc">采购清单</h3>
+        <button class="btn small" id="proc-close" type="button" aria-label="Close">×</button>
+      </div>
+      <ul id="proc-list"></ul>
+    </aside>
+
+    <aside id="step-drawer" class="hud panel" hidden>
+      <div class="drawer-head">
+        <h3 data-i18n="hud.steps">步骤</h3>
+        <button class="btn small" id="drawer-close">×</button>
+      </div>
+      <ol id="step-list"></ol>
+    </aside>
+
+    <div id="anno-layer" class="hud" hidden aria-hidden="true"></div>
+    <div id="toast" hidden></div>
+
+    <section id="complete" class="hud" hidden>
+      <div class="complete-card panel">
+        <h2 id="done-title"></h2>
+        <div class="complete-actions">
+          <button class="btn" id="view-scene" data-i18n="done.scene">回到场景</button>
+          <button class="btn" id="replay" data-i18n="done.replay">重玩</button>
+          <a class="btn" id="done-home" href="https://www.nokeyout.com/">
+            <span data-i18n="done.back">返回</span>
+            <img class="complete-mark" src="../assets/icons/nokeyout_16.png" srcset="../assets/icons/nokeyout_16.png 1x, ../assets/icons/nokeyout_20.png 1.25x, ../assets/icons/nokeyout_32.png 2x, ../assets/icons/nokeyout_48.png 3x" width="16" height="16" alt="">
+            <span>NOKEYOUT</span>
+          </a>
+          <a class="btn complete-github" href="https://github.com/Purisky/NoKeyOut" target="_blank" rel="noopener">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            <span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section id="tf-term" class="hud panel" hidden aria-label="TF flash terminal">
+      <header class="term-head">
+        <span class="term-dot" aria-hidden="true"></span>
+        <span class="term-name">flash-tf.sh</span>
+        <span class="term-path">/dev/sdX</span>
+        <button class="btn small" id="tf-term-skip" type="button" data-i18n="tf.skip">跳过烧录</button>
+        <button class="btn small" id="tf-term-close" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="term-grid">
+        <div class="term-pane">
+          <div id="tf-term-out" class="term-out" role="log" aria-live="polite"></div>
+          <form id="tf-term-form" class="term-input-row" autocomplete="off">
+            <span class="term-prompt" id="tf-term-prompt">user@pc:~$</span>
+            <input id="tf-term-input" type="text" spellcheck="false" autocapitalize="off" placeholder="输入命令后回车…" aria-label="Command input">
+            <button class="btn small" type="submit" aria-label="Run command">↵</button>
+          </form>
+        </div>
+        <aside class="term-side">
+          <div class="kicker" data-i18n="tf.kicker">在线获取脚本与镜像</div>
+          <p id="tf-term-board" class="term-hint"></p>
+          <code id="tf-term-cmd" class="term-cmd"></code>
+          <button class="btn small term-copy" id="tf-copy-cmd" type="button" data-i18n="tf.copy">复制命令</button>
+          <ul id="tf-term-params" class="term-params"></ul>
+          <p id="tf-term-hint" class="term-hint" data-i18n="tf.cmdHint"></p>
+        </aside>
+      </div>
+    </section>
+
+    <div id="loading" class="hud" role="status" aria-live="polite">
+      <div class="load-card">
+        <button id="load-lang" class="load-lang" type="button" aria-label="Language">EN</button>
+        <div class="load-brand"><img class="load-mark" src="../assets/icons/nokeyout_16.png" srcset="../assets/icons/nokeyout_16.png 1x, ../assets/icons/nokeyout_20.png 1.25x, ../assets/icons/nokeyout_32.png 2x, ../assets/icons/nokeyout_48.png 3x" width="16" height="16" alt="">nokeyout</div>
+        <div class="load-bar"><i id="load-fill"></i></div>
+        <div class="load-line">
+          <span id="load-label" data-i18n="loading.scene">正在载入 3D 场景…</span>
+          <span id="load-pct">0%</span>
+        </div>
+        <button id="load-enter" class="btn load-enter" data-i18n="loading.enter" hidden>进入场景</button>
+        <p class="load-tip" data-i18n="loading.tip">进入后按顶部步骤操作</p>
+        <div id="load-parts" hidden>
+          <div class="lp-head"><span data-i18n="hud.proc">采购清单</span><span id="lp-rate" class="lp-rate"></span></div>
+          <ul id="lp-list" class="lp-list"></ul>
+          <div class="lp-total"><span data-i18n="parts.total">合计</span><b id="lp-total"></b></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="sfx.js?v=20261024-1"></script>
+  <script src="fx.js?v=20261022-5"></script>
+  <script src="app.js?v=20261024-12"></script>
+<script src="../assets/pixel-snap.js?v=1"></script>
+  <script src="levels/level-1-switch.js?v=20261023-32"></script>
+</body>
+</html>

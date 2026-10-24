@@ -1,0 +1,30 @@
+{
+  "name": "omp-nokeyout-provider",
+  "version": "0.1.0",
+  "private": true,
+  "description": "omp/Pi provider extension: registers the nokeyout gateway and discovers its model list live from GET /v1/models",
+  "type": "module",
+  "omp": {
+    "extensions": [
+      "./nokeyout-provider.ts"
+    ]
+  },
+  "pi": {
+    "extensions": [
+      "./nokeyout-provider.ts"
+    ]
+  },
+  "files": [
+    "nokeyout-provider.ts"
+  ],
+  "keywords": [
+    "pi",
+    "pi-package",
+    "oh-my-pi",
+    "omp",
+    "nokeyout",
+    "provider",
+    "llm-gateway"
+  ],
+  "license": "MIT"
+}

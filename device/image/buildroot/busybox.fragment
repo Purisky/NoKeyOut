@@ -1,0 +1,9 @@
+# busybox 补充 applet（Buildroot 默认 busybox.config 未开，但 NoKeyOut 首启流程要用）：
+#   chpasswd —— 首启向导改管理员口令（setup.sh 注释：/usr/bin/chpasswd）
+#   stat     —— 各脚本文件尺寸/属性判断
+#   pgrep    —— 冒烟/探活（acceptance/脚本层）
+#   getent   —— 账号存在性查询（标准写法，busybox 也有）
+CONFIG_STAT=y
+CONFIG_PGREP=y
+CONFIG_CHPASSWD=y
+CONFIG_GETEN=y

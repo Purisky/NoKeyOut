@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# nokeyout-magpie-cli —— magpie CLI 的白名单包装器（root 所有 0755）
+#
+# 存在理由：panel 以非 root 用户运行，不给额外特权组。
+# 首启向导/面板只允许经 sudoers 调本包装器执行固定子命令，其余一律拒绝。
+#
+# sudoers（/etc/sudoers.d/nokeyout-panel）：
+#   nokeyout ALL=(root) NOPASSWD: /usr/local/bin/nokeyout-magpie-cli
+#
+# 允许清单（刻意小）：provider add/list、gateway-key add/list/models/limit、models
+set -euo pipefail
+CTR="${NOKEYOUT_CONTAINER:-magpie}"
+die() { echo "nokeyout-magpie-cli: $*" >&2; exit 3; }
+
+[ $# -ge 1 ] || die "缺子命令"
+sub="$1"; shift
+case "$sub" in
+  provider)
+    [ $# -ge 1 ] || die "provider 需要 add"
+    case "$1" in
+      add)
+        [ $# -eq 3 ] || die "用法: provider add <preset> <key>"
+        [[ "$2" =~ ^[A-Za-z0-9._-]{1,32}$ ]] || die "preset 名非法"
+        [ ${#3} -ge 8 ] && [ ${#3} -le 512 ] || die "key 长度非法"
+        ;;
+      *) die "provider 仅允许 add" ;;
+    esac ;;
+  providers) [ $# -eq 0 ] || die "providers 无参" ;;
+  gateway-key)
+    [ $# -ge 1 ] || die "gateway-key 需要 add|list|models|limit|remove|export"
+    case "$1" in
+      add)  [ $# -eq 2 ] || die "用法: gateway-key add <name>"
+            # 名字可以是 UTF-8（中文等）；只挡空名、控制字符和明显过长的。
+            # magpie 自己限 120 字符；480 的粗上限按字符或字节计数都不会误杀 CJK。
+            [ -n "$2" ] || die "key 名不能为空"
+            case "$2" in *[[:cntrl:]]*|*'|'*) die "key 名不能含控制字符或 |" ;; esac
+            [ ${#2} -le 480 ] || die "key 名过长" ;;
+      list) [ $# -eq 1 ] || die "gateway-key list 无参" ;;
+      export) [ $# -eq 1 ] || die "gateway-key export 无参" ;;
+      models)
+            [ $# -ge 3 ] || die "用法: gateway-key models <id> <model...>";
+            [[ "$2" =~ ^[0-9a-fA-F]{8,40}$ ]] || die "id 必须是网关 key 的十六进制 id";
+            for m in "${@:3}"; do [[ "$m" =~ ^[A-Za-z0-9._*/{},-]{1,96}$ ]] || die "模型名非法: $m"; done ;;
+      limit)
+            [ $# -ge 4 ] || die "用法: gateway-key limit <id> <day|week|month|ndays> --tokens N [--cost C]";
+            [[ "$2" =~ ^[0-9a-fA-F]{8,40}$ ]] || die "id 必须是网关 key 的十六进制 id" ;;
+      remove)
+            [ $# -eq 2 ] || die "用法: gateway-key remove <id>";
+            [[ "$2" =~ ^[0-9a-fA-F]{8,40}$ ]] || die "id 必须是网关 key 的十六进制 id" ;;
+      *) die "gateway-key 仅允许 add|list|models|limit|remove|export" ;;
+    esac ;;
+  models) [ $# -eq 0 ] || die "models 无参" ;;
+  *) die "子命令不在白名单: $sub" ;;
+esac
+
+# 单二进制模式无 magpie 容器；is-active nokeyout-magpie-binary 时直接调
+# /usr/local/bin/magpie。必须带**服务同款配置上下文**（unit 的 Environment）：
+# 否则以 root 跑会落到 /root/.config 的另一份空配置——看到的 provider/key 与
+if systemctl is-active --quiet nokeyout-magpie-binary 2>/dev/null; then
+  UNIT="${NOKEYOUT_BIN_UNIT:-/etc/systemd/system/nokeyout-magpie-binary.service}"
+  if [ -f "$UNIT" ]; then
+    while IFS= read -r kv; do
+      case "$kv" in HOME=*|XDG_CONFIG_HOME=*|XDG_CACHE_HOME=*) export "$kv" ;; esac
+    done < <(sed -n 's/^Environment=//p' "$UNIT")
+  fi
+  if [ "$sub" = "gateway-key" ] && [ "$1" = "export" ]; then
+    cfg="${XDG_CONFIG_HOME:-$HOME/.config}/magpie/caller-keys.json"
+    [ -r "$cfg" ] || die "读不到 $cfg"
+    cat "$cfg"
+    exit 0
+  fi
+  # CLI 写状态时必须用服务用户（magpie-rt），否则 caller-keys.json 会变成
+  # root:magpie-rt 0600，magpie web 之后无法写入（点“添加网关密钥”无响应）。
+  SVC_USER=$(systemctl show -p User --value nokeyout-magpie-binary 2>/dev/null || true)
+  if [ -n "$SVC_USER" ] && [ "$SVC_USER" != "root" ] && id "$SVC_USER" >/dev/null 2>&1; then
+    SVC_GID=$(id -g "$SVC_USER")
+    exec setpriv --reuid="$SVC_USER" --regid="$SVC_GID" --init-groups /usr/local/bin/magpie "$sub" "$@"
+  fi
+  exec /usr/local/bin/magpie "$sub" "$@"
+fi
+command -v docker >/dev/null || die "docker 不可用（且非二进制模式）"
+if [ "$sub" = "gateway-key" ] && [ "$1" = "export" ]; then
+  docker exec "$CTR" cat /config/magpie/caller-keys.json
+  exit 0
+fi
+docker exec -i "$CTR" magpie "$sub" "$@"

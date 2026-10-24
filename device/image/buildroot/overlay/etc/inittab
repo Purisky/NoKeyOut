@@ -1,0 +1,6 @@
+# busybox inittab（NoKeyOut：无 systemd，rcS 起全部服务）
+::sysinit:/etc/init.d/rcS
+::respawn:/bin/sh
+::restart:/sbin/init
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r 2>/dev/null

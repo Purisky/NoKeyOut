@@ -1,0 +1,3 @@
+# NoKeyOut 设备的 sudoers：panel 非 root 运行，root 动作只走白名单 helper
+# 与 setup.sh 生成的那份一致（镜像首启用；更新仍以 setup.sh 为准）
+nokeyout ALL=(root) NOPASSWD: /usr/local/bin/nokeyout-magpie-cli, /usr/bin/chpasswd, /usr/local/bin/nokeyout-auth, /usr/local/bin/nokeyout-upgrade

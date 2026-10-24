@@ -1,0 +1,23 @@
+/* 全站设计 token —— 主页（web/index.html）与小游戏（web/diy/）共用。
+   颜色、字体栈、硬阴影都在这里定义，两边的 CSS 只做别名与组件样式。
+   字体族在各自页面里用 @font-face 声明：
+   主页 = Fusion Pixel（proportional），小游戏 = Fusion Pixel Game（monospaced）。 */
+:root {
+  color-scheme: dark;
+  --bg: #0b0e13;
+  --panel: #12161d;
+  --panel-2: #171d25;
+  --line: #232b36;
+  --line-2: #3a4553;
+  --fg: #e8eef5;
+  --muted: #8d99a6;
+  --dim: #6e7a88;
+  --green: #35c76d;
+  --amber: #f0a83c;
+  --blue: #39c5cf;
+  --red: #ff5f56;
+  --pixel: "Silkscreen", "Fusion Pixel Game", "Fusion Pixel", ui-monospace, monospace;
+  --term: "VT323", "Fusion Pixel Game", "Fusion Pixel", ui-monospace, Consolas, monospace;
+  --shadow-hard: 4px 4px 0 #000;
+  --shadow-soft: 2px 2px 0 #000;
+}

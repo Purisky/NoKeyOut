@@ -1,0 +1,38 @@
+# magpie 网关容器 —— 锁版部署（NoKeyOut 设备侧）
+#
+# 收敛要点：
+#   - 版本锁定 semver（不用 latest；升级先看 CHANGELOG 再走 scripts/verify-magpie.sh 冒烟）
+#   - web UI 只在宿主回环可达（LAN 不可直达；用户经 panel :8443 /console/ 代理进）。
+#     注意：容器内 --addr 127.0.0.1 绑的是容器自己的 loopback，宿主反而够不着；
+#     正确做法 = 容器内听 0.0.0.0:3430，发布时 -p 127.0.0.1:3430:3430 绑宿主回环。
+#   - MAGPIE_WEB_KEY 固定（否则每次容器重建轮换，panel 控制台代理失效）
+#   - /config 卷是全部状态（providers/真实 Key/sign-ins/plugins），备份 = 备份这个目录
+#
+# 用法：
+#   MAGPIE_WEB_KEY=<hex32> docker compose -f magpie-compose.yml up -d
+#   docker compose -f magpie-compose.yml pull && ... up -d   # 升级（先改 version）
+#
+
+services:
+  magpie:
+    image: ghcr.io/yetone/magpie:0.1.1322
+    command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]  # 容器内全网卡；发布绑宿主回环
+    environment:
+      MAGPIE_ADDR: "0.0.0.0:3425"                # 网关面：LAN（客户端唯一入口）
+      # RFC 5737 占位地址；用 NOKEYOUT_DEVICE_IP 覆盖
+      MAGPIE_PUBLIC_URL: "http://${NOKEYOUT_DEVICE_IP:-192.0.2.10}:3425"
+      MAGPIE_WEB_KEY: "${MAGPIE_WEB_KEY:?set MAGPIE_WEB_KEY (openssl rand -hex 16)}"
+      HOME: /config/home
+      XDG_CONFIG_HOME: /config
+      XDG_CACHE_HOME: /config/cache
+    ports:
+      - "3425:3425"                              # 网关面：LAN
+      - "127.0.0.1:3430:3430"                    # web 面：只绑宿主回环（panel 代理用）
+    volumes:
+      - /home/nokeyout/magpie-config:/config      # ⚠️ 全部真实 Key 在此；加密卷就加密它
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "magpie", "healthcheck"]     # 上游官方提供（docker 文档）
+      interval: 30s
+      timeout: 5s
+      retries: 3

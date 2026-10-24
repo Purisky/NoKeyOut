@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoKeyOut · 管理面</title>
+<style>
+  :root { color-scheme: light dark;
+          /* 表单控件的底色/前景：浅色与深色各自成对，避免"白底白字" */
+          --ctl-bg: #ffffff; --ctl-fg: #111827; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ctl-bg: #1b2230; --ctl-fg: #e8eef4; }
+  }
+  body { font: 14px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0;
+           border-bottom: 1px solid var(--border, #8884); }
+  header .brand { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+  header .brand b { font-size: 15px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px;
+           border: 1px solid var(--border, #8886); color: var(--muted, #888); }
+  .spacer { flex: 1; }
+  nav { display: flex; gap: 2px; }
+  nav button { border: 0; background: transparent; color: inherit; font: inherit;
+               padding: 8px 14px; cursor: pointer; border-radius: 8px 8px 0 0;
+               border-bottom: 2px solid transparent; opacity: .65; }
+  nav button.on { opacity: 1; border-bottom-color: var(--accent, #06c); font-weight: 600; }
+  button.act { font: inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+               border: 1px solid var(--border, #8886); background: transparent; color: inherit; }
+  button.primary { background: var(--accent, #06c); color: #fff; border-color: transparent; }
+  main { padding: 16px; max-width: 1080px; margin: 0 auto; }
+  section.panel { border: 1px solid var(--border, #8884); border-radius: 12px;
+                  padding: 14px 16px; margin-bottom: 16px; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  #console { width: 100%; height: calc(100vh - 170px); min-height: 480px;
+             border: 1px solid var(--border, #8884); border-radius: 8px; background: var(--surface, #8881); }
+  textarea { width: 100%; box-sizing: border-box; height: 170px; font: 12px/1.45 ui-monospace, monospace;
+             padding: 8px; border: 1px solid var(--border, #8886); border-radius: 8px;
+             background: transparent; color: inherit; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .muted { color: var(--muted, #888); font-size: 12px; }
+  .kv { display: inline-flex; gap: 6px; margin-right: 18px; }
+  .kv b { font-weight: 600; }
+  input[type=text], select { padding: 6px 8px; font: inherit;
+    border: 1px solid var(--border, #8886); border-radius: 8px;
+    background-color: var(--ctl-bg); color: var(--ctl-fg); }
+  /* <select> 的**弹出列表**由 UA 画：只给控件 transparent+inherit 时，
+     深色页面里弹出列表可能白底白字。
+     所以控件与 option 都要显式上色，两种配色下各自都有底色与前景。 */
+  option { background-color: var(--ctl-bg); color: var(--ctl-fg); }
+  input[type=text].bad, select.bad { border-color: var(--error, #e5484d); }
+  code { background: var(--surface, #8882); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border, #8883); }
+  tr.sel { background: var(--surface, #8882); }
+  /* 屏幕模块编辑器 */
+  .scrrow { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  .scridx { flex: 0 0 10px; text-align: right; }
+  .scrroflin { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .scrroflin select { width: 100%; }
+  .scrdesc { min-height: 16px; }
+  .scrh { flex: 0 0 44px; text-align: right; }
+  .scrbudgetrow { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .scrbudget { flex: 1 1 160px; height: 6px; border-radius: 3px;
+               background: var(--surface, #8883); overflow: hidden; }
+  #scrbfill { height: 100%; width: 0; border-radius: 3px;
+              background: var(--accent, #06c); transition: width .18s ease; }
+  #scrbfill.warn { background: var(--warning, #d97706); }
+  #scrbfill.over { background: var(--error, #e5484d); }
+  #scrpair { min-height: 16px; }
+  .scrgrid { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
+  @media (max-width: 760px) { .scrgrid { grid-template-columns: minmax(0, 1fr); } }
+  .scrprevwrap { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .screlem { border: 1px solid var(--border, #8884); border-radius: 10px; padding: 8px 10px; margin: 6px 0; }
+  .screhead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .screhead select { max-width: 150px; }
+  .screh { margin-left: auto; }
+  .screbody { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+              gap: 6px 10px; margin-top: 8px; }
+  .scrfld { display: flex; flex-direction: column; gap: 2px; }
+  .scrfld > span { font-size: 12px; color: var(--muted, #888); }
+  .scrfld input, .scrfld select { width: 100%; box-sizing: border-box; }
+  .scrfldval { grid-column: 1 / -1; }
+  .screlem .screhead .scrup, .screlem .screhead .scrdn { padding: 4px 9px; }
+  .iconbtn { padding: 4px 9px; }
+  /* agent 下拉（icon+名字） */
+  .dd { position: relative; }
+  .dd > .menu { display: none; position: absolute; z-index: 20; top: 110%; left: 0;
+                width: 320px; max-height: 60vh; overflow: auto; padding: 6px;
+                border: 1px solid var(--border, #8886); border-radius: 10px;
+                background: var(--ctl-bg, #fff); color: var(--ctl-fg, #111827);
+                box-shadow: 0 8px 28px #0002; }
+  .dd.open > .menu { display: block; }
+  .menu .item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px;
+                cursor: pointer; font-size: 13px; }
+  .menu .item:hover { background: var(--surface, #8882); }
+  .menu .item img { width: 16px; height: 16px; flex: none; }
+  .menu .item .sub { font-size: 11px; color: var(--muted, #888); margin-left: auto;
+                     max-width: 190px; white-space: nowrap; overflow: hidden;
+                     text-overflow: ellipsis; }
+  /* 主页看板 */
+  .dbhero { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+            border: 1px solid var(--border, #8884); border-radius: 12px;
+            padding: 14px 18px; margin-bottom: 16px;
+            background: linear-gradient(135deg, var(--surface, #8881), transparent 70%); }
+  .dbhero-l { flex: 1 1 320px; min-width: 240px; }
+  .dbhero-title { display: flex; align-items: center; gap: 9px; font-size: 16px; }
+  .dbhero-title b { font-weight: 650; }
+  .dbdot { width: 9px; height: 9px; flex: none; border-radius: 50%;
+           background: var(--muted, #888); box-shadow: 0 0 0 4px var(--surface, #8881); }
+  .dbdot.ok { background: var(--success, #30a46c); }
+  .dbdot.warn { background: var(--warning, #d97706); }
+  .dbdot.bad { background: var(--error, #e5484d); }
+  .dbkpi-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .dbkpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px; margin-bottom: 16px; }
+  .dbkpi { min-width: 0; padding: 12px 14px; border: 1px solid var(--border, #8884);
+           border-radius: 12px; background: var(--surface, #8881); }
+  .dbkpi-label { font-size: 12px; color: var(--muted, #888);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dbkpi-value { font-size: 22px; font-weight: 650; line-height: 1.25; margin-top: 4px;
+                 font-variant-numeric: tabular-nums; }
+  .dbkpi-sub { font-size: 11px; color: var(--muted, #888); margin-top: 3px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dbkpi.bad .dbkpi-value { color: var(--error, #e5484d); }
+  .dbkpi.warn .dbkpi-value { color: var(--warning, #d97706); }
+  .dbchart-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .dbchart-head h2 { margin: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--border, #8886);
+         border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: inherit; font: inherit;
+                font-size: 12px; padding: 4px 10px; cursor: pointer; opacity: .65; }
+  .seg button.on { opacity: 1; background: var(--surface, #8883); font-weight: 600; }
+  .dbchart { overflow-x: auto; }
+  .dbchart svg { width: 100%; min-width: 640px; height: auto; display: block; }
+  .dbempty { display: grid; place-items: center; min-height: 150px;
+             color: var(--muted, #888); font-size: 12px; text-align: center; padding: 0 12px; }
+  .dbpools { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+  .dbpool { padding: 10px 12px; border: 1px solid var(--border, #8884);
+            border-radius: 10px; background: var(--surface, #8881); }
+  .dbpool-h { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  .dbpool-h b { font-size: 13px; }
+  .dbpool-acct { font-size: 11px; color: var(--muted, #888); max-width: 100%;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dbpool-row { margin-top: 8px; }
+  .dbpool-row:first-of-type { margin-top: 0; }
+  .dbpool-lab { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .dbpool-lab span:last-child { color: var(--muted, #888); text-align: right; }
+  .dbpool-err { color: var(--error, #e5484d); font-size: 12px; word-break: break-word; }
+  .dbpool-bal { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .dbpool-bal.bad { color: var(--error, #e5484d); }
+  .dbpool-bal.warn { color: var(--warning, #d97706); }
+  .dbpool-note { font-size: 11px; color: var(--muted, #888); }
+  .dbmeter { height: 6px; border-radius: 4px; background: var(--surface, #8883);
+             overflow: hidden; margin: 5px 0 3px; }
+  .dbmeter > i { display: block; height: 100%; width: 0; border-radius: 4px;
+                 background: var(--accent, #06c); transition: width .2s ease; }
+  .dbmeter > i.warn { background: var(--warning, #d97706); }
+  .dbmeter > i.bad { background: var(--error, #e5484d); }
+  .dbmeter > i.muted { background: var(--muted, #888); }
+  .dbsys { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+           gap: 10px 18px; }
+  .dbsys .k { font-size: 11px; color: var(--muted, #888); }
+  .dbsys .v { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  .dbsys .v code { font-size: 11px; }
+  .dbnerr { border: 1px solid var(--error, #e5484d88); background: #e5484d18;
+            background: color-mix(in srgb, var(--error, #e5484d) 10%, transparent);
+            color: var(--error, #e5484d); border-radius: 10px; padding: 8px 12px;
+            margin-bottom: 16px; font-size: 12px; }
+  .dbnerr div + div { margin-top: 4px; }
+  @media (max-width: 720px) {
+    header { flex-wrap: wrap; row-gap: 4px; }
+    header .brand { flex: 1 1 100%; padding-bottom: 4px; }
+    header .spacer { display: none; }
+    header nav { order: 3; width: 100%; overflow-x: auto; }
+    header nav button { flex: none; white-space: nowrap; }
+  }
+  @media (max-width: 560px) {
+    .dbkpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dbkpi-value { font-size: 19px; }
+  }
+  /* magpie 全幅显示；不改颜色 */
+  body.magpie-open main { max-width: none; padding: 0; }
+  body.magpie-open [data-pane="magpie"] #console { height: calc(100vh - 57px);
+             min-height: 0; border: 0; border-radius: 0; }
+  @media (max-width: 720px) {
+    body.magpie-open [data-pane="magpie"] #console { height: calc(100vh - 107px); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <b>NoKeyOut 管理面</b>
+    <span class="muted" id="me"></span>
+  </div>
+  <span class="spacer"></span>
+  <nav>
+    <button data-tab="home" class="on">主页</button>
+    <button data-tab="models">模型配置</button>
+    <button data-tab="magpie">magpie</button>
+    <button data-tab="system">系统</button>
+  </nav>
+  <span style="width:8px"></span>
+  <button class="act" id="nklang" title="Language">EN</button>
+  <button class="act" id="logout">退出登录</button>
+</header>
+<main>
+  <!-- 主页：健康总览 + 周期 KPI + 用量趋势 + 额度/余额 + 网关与设备 -->
+  <div class="tabpane" data-pane="home">
+    <div id="dbnerr" class="dbnerr" hidden></div>
+
+    <section class="dbhero" aria-label="网关健康总览">
+      <div class="dbhero-l">
+        <div class="dbhero-title"><span id="dbdot" class="dbdot"></span><b id="dbhealth">加载中…</b></div>
+        <div class="muted" id="dbhealthsub"></div>
+      </div>
+      <button class="act" id="dbrefresh" type="button">刷新</button>
+    </section>
+
+    <div class="dbkpi-head">
+      <span class="muted">用量周期</span>
+      <div class="seg" id="dbperiod">
+        <button type="button" data-p="today" class="on" title="设备本地今日 00:00 起">近1日</button>
+        <button type="button" data-p="7d">近 7 天</button>
+        <button type="button" data-p="30d">近 30 天</button>
+      </div>
+    </div>
+    <div class="dbkpis" id="dbkpis"></div>
+
+    <section class="panel">
+      <div class="dbchart-head">
+        <h2>用量趋势</h2>
+        <span class="spacer"></span>
+        <div id="dbchartsum"></div>
+      </div>
+      <div id="dbchart" class="dbchart"></div>
+    </section>
+
+    <section class="panel">
+      <div class="dbchart-head">
+        <h2>额度与余额</h2>
+        <span class="spacer"></span>
+        <div class="muted" id="dbpoolsum"></div>
+      </div>
+      <div id="dbpools" class="dbpools"></div>
+    </section>
+
+    <section class="panel">
+      <div class="dbchart-head">
+        <h2>网关与设备</h2>
+        <span class="spacer"></span>
+      </div>
+      <div id="dbsys" class="dbsys"></div>
+    </section>
+  </div>
+
+  <!-- 模型配置：选模型（原列表）→ 选密钥 → 选 agent（icon+名字）→ 生成配置 -->
+  <div class="tabpane" data-pane="models" style="display:none">
+    <section class="panel">
+      <h2>选择模型 <span class="muted">— 实时来自网关 GET /v1/models；勾选 = 生成静态清单的模型 / 密钥 Models 作用域的参考清单</span></h2>
+      <div class="row">
+        <button class="act" id="reload">重新拉取</button>
+        <label><input type="checkbox" id="selAll"> 全选</label>
+        <span class="muted" id="mcount"></span>
+      </div>
+      <div style="max-height:300px;overflow:auto;border:1px solid var(--border,#8883);border-radius:8px">
+        <table><thead><tr>
+          <th style="width:30px"><input type="checkbox" id="selAll2"></th>
+          <th>模型 id</th><th>名称</th><th>上下文</th><th>推理</th>
+        </tr></thead>
+        <tbody id="models"></tbody></table>
+      </div>
+      <div class="muted" id="scopeinfo" style="margin-top:6px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>生成客户端配置 <span class="muted">— 选择密钥与 agent</span></h2>
+      <div class="row">
+        <span class="muted">密钥</span>
+        <select id="krsel" style="min-width:300px"><option value="">— 选择密钥 —</option></select>
+        <button class="act" type="button" id="krjump">去 magpie 管理密钥 →</button>
+      </div>
+      <div class="row">
+        <div class="dd" id="dd">
+          <button class="act" id="ddbtn"><img id="ddicon" src="" alt="" style="width:16px;height:16px;vertical-align:-3px;display:none"> <span id="ddlabel">选择 agent</span> ▾</button>
+          <div class="menu" id="ddmenu"></div>
+        </div>
+        <button class="primary" id="gen">生成配置</button>
+        <button class="act" id="copy">一键复制</button>
+        <span class="muted" id="copyhint"></span>
+      </div>
+      <div class="muted" id="agenthint" style="margin-top:2px"></div>
+      <div class="muted">配置由设备生成，尽量内嵌所选密钥；Zed 等少数客户端按提示用环境变量携带。密钥值不显示，保存后请自行保管。</div>
+      <textarea id="snip" readonly placeholder="选密钥 → 选 agent → 生成配置"></textarea>
+      <div class="muted" id="gennote" style="margin-top:6px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>客户端插件（模型列表获取）<span class="muted">— omp / Pi 的 provider 扩展：启动自动从网关拉模型列表，零静态清单</span></h2>
+      <div class="row"><b>安装插件</b>（在开发机上执行）：</div>
+      <textarea id="plugincmd" readonly spellcheck="false" style="height:80px">omp plugin link "&lt;仓库路径&gt;/NoKeyOut/omp-provider"
+# 或分发形态：omp plugin install git:github.com/&lt;you&gt;/omp-nokeyout-provider</textarea>
+      <div class="muted">插件的 headers.User-Agent 与 promptCacheSessionHeader 已内建；模型列表 8 秒上限拉取，
+      失败不卡启动，会话内 <code>/nokeyout-refresh</code> 可重拉。装成包后每次启动自动加载。</div>
+    </section>
+  </div>
+
+  <!-- magpie -->
+  <div class="tabpane" data-pane="magpie" style="display:none">
+    <iframe id="console" title="console"></iframe>
+  </div>
+
+  <!-- 系统 -->
+  <div class="tabpane" data-pane="system" style="display:none">
+    <section class="panel">
+      <h2>版本</h2>
+      <div id="verinfo" class="muted">加载中…</div>
+      <div class="muted" style="margin-top:6px">
+        升级是显式动作：本页只提供能力，不会催促。出厂版本 = NoKeyOut 验证过的组合；
+        自行升级测试前请先备份，失败会自动回滚到升级前版本。
+      </div>
+    </section>
+    <section class="panel">
+      <h2>NoKeyOut 官方签名更新 <span class="muted">— 可选通道；不影响自行构建/替换</span></h2>
+      <div class="row">
+        <button class="act" type="button" id="nkuCheck">检查更新</button>
+        <button class="primary" type="button" id="nkuInstall">安装最新</button>
+        <button class="act" type="button" id="nkuRollback">回滚</button>
+        <span id="nkuMsg" class="muted"></span>
+      </div>
+      <div id="nkuState" class="muted">—</div>
+      <div class="muted" style="margin-top:8px">签名只约束这个官方更新按钮；自行修改的 NoKeyOut 可直接替换二进制，或用
+        <code>nokeyout-upgrade nk-deploy &lt;本地 tarball&gt;</code> 离线安装。设备没有安全启动/硬件锁定。</div>
+    </section>
+    <section class="panel">
+      <h2>屏幕模块</h2>
+      <div class="muted">小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤ 240px」是唯一约束</div>
+      <div id="scrrows" style="margin-top:6px"></div>
+
+      <!-- 预算条：已用槽高 / 屏高（超预算变红，和错误提示同步） -->
+      <div class="scrbudgetrow">
+        <div class="scrbudget" title="槽高合计 / 屏高"><div id="scrbfill"></div></div>
+        <span id="scrsum" class="muted">—</span>
+        <span id="scrhint" class="muted"></span>
+      </div>
+      <div id="scrpair" class="muted"></div>
+
+      <!-- 配额密度：bool 决定详细 / 简易（简易 = 一行一条，20px） -->
+      <div class="row" style="margin-top:8px">
+        <label class="muted" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="scrcmp"> 配额简易模式（一行一条）
+        </label>
+      </div>
+
+      <!-- 用量周期：近24小时 / 近7日 / 近30日（模块栈里放了「用量」才生效） -->
+      <div class="row" style="margin-top:10px">
+        <span class="muted">用量周期</span>
+        <select id="scrusage" style="width:170px"></select>
+      </div>
+
+      <!-- 配额自定义：列表里加「供应商 / 周期」，顺序即屏上顺序；空 = 自动 -->
+      <div class="muted" style="margin-top:12px">配额自定义（空 = 自动：全部配额按剩余升序）</div>
+      <div id="scrqlist"></div>
+      <div class="row">
+        <button class="act" id="scrqadd">添加配额</button>
+        <span id="scrqmsg" class="muted"></span>
+      </div>
+
+      <div class="scrprevwrap" style="margin-top:10px">
+        <div class="muted">设备屏 240×240 · 实时数据</div>
+        <img id="scrprev" alt="" width="240" height="240"
+             style="width:240px;height:240px;image-rendering:pixelated;
+                    background:#000;border:1px solid var(--border,#8886);border-radius:8px">
+        <div id="scrprevmsg" class="muted"></div>
+        <div class="muted" style="text-align:center">预览不保存、不写入设备配置</div>
+      </div>
+
+      <div class="row">
+        <button class="primary" id="scrsave" disabled>保存</button>
+        <span id="scrmsg" class="muted"></span>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>用户按键</h2>
+      <div class="muted">板上 USER 键的默认动作是熄屏 / 亮屏；端口开放（ADMIN）期间屏幕强制常亮，拨回 LOCK 后才能熄屏。动作映射保存在设备上，屏幕开关状态只影响本次运行。</div>
+      <div class="row" style="margin-top:8px">
+        <span class="muted">按下 USER 键</span>
+        <select id="btnact" style="width:220px"></select>
+        <button class="primary" id="btnsave" disabled>保存</button>
+        <span id="btnmsg" class="muted"></span>
+      </div>
+      <div class="muted" style="margin-top:6px">每次重启/上电都以亮屏启动（开关状态不落盘）。</div>
+    </section>
+
+    <section class="panel">
+      <h2>备份</h2>
+      <div class="row">
+        <button class="primary" id="bk">立即备份</button>
+        <input type="text" id="bkpw" placeholder="加密口令（可选，≥8 位；留空=不加密，仅本机 0600）" style="flex:1;min-width:260px">
+      </div>
+      <div class="muted">备份内容：网关全部状态（providers/真实 Key/网关密钥）+ 面板密钥 + 配置。可下载到别处保管。</div>
+      <div id="bklist" style="margin-top:10px"></div>
+    </section>
+    <section class="panel">
+      <h2>升级 / 回退</h2>
+      <div class="row">
+        <input type="text" id="upver" placeholder="版本号 x.y.z（或用右侧最新）" style="width:220px">
+        <button class="primary" id="up">升级到此版本</button>
+        <button class="act" id="upLatest">升级到最新</button>
+        <button class="act" id="rb">回退到上次已知良好</button>
+      </div>
+      <div class="muted">升级流程：拉镜像 → 重建网关 → 健康检查 → 一次真实调用冒烟；任一步失败自动回滚。
+      整个网关 LLM 服务会中断 <b>约 10–30 秒</b>（拉镜像更久）。升级是版本行为，不影响已建密钥。</div>
+      <pre id="sysout" style="min-height:80px;max-height:260px;overflow:auto;font-size:12px;
+        border:1px solid var(--border,#8883);border-radius:8px;padding:8px;background:var(--surface,#8881)"></pre>
+    </section>
+  </div>
+</main>
+<script>
+/* 界面语言与设备屏同源：GET/POST /api/lang（server.lang()）。字典按「中文原文」索引。 */
+const NK = { lang: 'zh' };
+NK.I18N = {
+  "NoKeyOut · 管理面": "NoKeyOut · Admin",
+  "NoKeyOut 管理面": "NoKeyOut admin",
+  "主页": "Home", "模型配置": "Models", "系统": "System", "退出登录": "Sign out",
+  "EN": "中文",
+  "加载中…": "Loading…", "采集中…": "Collecting…",
+  "可达": "up", "不可达": "down",
+  "状态获取失败": "status fetch failed",
+  "缓存命中": "Cache hit", "近1日 tokens": "Last 1 day tokens",
+  "近1日调用": "Last 1 day calls",
+  "统计获取失败": "stats fetch failed",
+  "刷新": "Refresh",
+  "近1日": "Last 1 day", "近 7 天": "7 days", "近 30 天": "30 days", "用量周期": "Usage period",
+  "当前": "current", "状态": "state", "最新": "latest", "更新器不可用": "updater unavailable",
+  "近 7 天 tokens": "7-day tokens", "近 30 天 tokens": "30-day tokens",
+  "近 7 天调用": "7-day calls", "近 30 天调用": "30-day calls",
+  "用量趋势": "Usage trend", "峰值": "Peak", "平均": "Avg",
+  "输入": "Input", "输出": "Output", "缓存读": "Cache reads",
+  "估算成本": "Est. cost", "按 magpie 价格估算": "Estimated at magpie prices",
+  "平均 tokens/次": "Avg tokens/call", "tokens ÷ 调用次数": "tokens ÷ calls",
+  "错误": "Errors", "错误率": "Error rate", "成功率": "Success rate",
+  "个模型": "models",
+  "额度与余额": "Quotas & balances",
+  "个供应商/账号": "providers/accounts", "条额度": "quota rows", "告警": "alerts",
+  "暂无额度数据": "No quota data",
+  "magpie 未配置供应商，或还没有可用额度":
+    "No providers configured in magpie, or no quota available yet",
+  "固定余额": "fixed balance", "已用": "used", "剩余": "left",
+  "额度": "quota", "暂无数据": "no data", "即将重置": "resetting soon",
+  "重置": "resets in", "后": "",
+  "天": "d", "小时": "h", "分": "m",
+  "网关正常": "Gateway healthy",
+  "网关不可达": "Gateway unreachable", "网关异常": "Gateway error",
+  "magpie web": "magpie web",
+  "web key 未配置": "web key not configured",
+  "数据更新": "Updated", "已过期": "stale",
+  "统计异常": "stats error", "用量数据已过期": "Usage data is stale",
+  "秒前": "s ago", "分钟前": "m ago", "小时前": "h ago", "刚刚": "just now",
+  "暂无趋势数据": "No trend data yet",
+  "网关与设备": "Gateway & device", "网关地址": "Gateway URL", "复制": "Copy",
+  "magpie 控制台": "magpie console", "系统 / 备份": "System / backup",
+  "网络": "Network", "面板版本": "Panel version",
+  "通": "up", "不通": "down",
+  "选择模型": "Select models",
+  "— 实时来自网关 GET /v1/models；勾选 = 生成静态清单的模型 / 密钥 Models 作用域的参考清单":
+    "— live from gateway GET /v1/models; checked = models for the static list / Models scope reference",
+  "重新拉取": "Refresh", "全选": "Select all", " 个模型": " models",
+  "模型 id": "Model id", "名称": "Name", "上下文": "Context", "推理": "Reasoning",
+  "拉取失败: ": "fetch failed: ",
+  "这个选择的作用": "What this selection does",
+  "① 生成配置时": "① When generating config",
+  "：": ":",
+  "Codex 这类需要静态清单的客户端，配置里只会列入勾选的模型；":
+    "clients like Codex that need a static list only get the checked models;",
+  "omp 插件与环境变量方式不带清单（omp 插件启动时自动同步网关全量列表）。":
+    "the omp plugin and env-var method carry no list (the omp plugin syncs the full list at startup).",
+  "② 对应到 magpie 的作用域": "② Mapping to magpie scopes",
+  "客户端密钥可在 magpie 里被限制为「只能用勾选的模型」——":
+    "a client key can be restricted in magpie to only the checked models —",
+  "Gateway keys → 选密钥 → Models，照此清单勾选；命令行等价于":
+    "Gateway keys → select key → Models, check per this list; CLI equivalent:",
+  "③ 不包含的": "③ Not included",
+  "：密钥创建、额度上限、可用账号、启用/吊销——全部在 magpie 控制台管理。":
+    ": key creation, quota caps, accounts, enable/revoke — all managed in the magpie console.",
+  "客户端密钥": "Client keys",
+  "— 面板密钥环：存「可轮换、限额的网关密钥」；供应商真实 Key 只在 magpie，面板从不存":
+    "— panel keyring: holds rotatable, rate-limited gateway keys; real provider keys live only in magpie, never here",
+  "— 密钥环（空）—": "— keyring (empty) —",
+  "新建一把（作用域=勾选模型）": "New key (scope = checked models)",
+  "粘贴一把现成的": "Paste an existing key",
+  "测试连通": "Test", "删除": "Delete",
+  "密钥环 = 面板替你放心保管的网关密钥（额度凭证，可限模型/限额/秒吊销）。":
+    "Keyring = gateway keys kept safely by the panel (quota credentials; model-scoped, rate-limited, revocable in seconds).",
+  "magpie 控制台仍是管理面（吊销、限额、作用域、供应商 Key 都归它）。密钥值 0600 存于设备，":
+    "The magpie console remains the console (revoke, limits, scopes, provider keys). Key values are stored 0600 on the device,",
+  "仅在生成配置时随会话下发。": "and returned only in-session when generating configs.",
+  "生成客户端配置": "Generate client config",
+  "选择 agent": "Select agent",
+  "生成配置": "Generate config",
+  "去 magpie 管理密钥 →": "Manage keys in magpie →",
+  "一键复制": "Copy",
+  "配置由设备生成、内嵌密钥环里选中的真密钥；占位只在未选密钥时出现。":
+    "Config is generated by the device with the selected real key; the placeholder appears only when no key is selected.",
+  "密钥环选一把 → 选 agent → 生成配置": "pick a key → pick an agent → generate config",
+  "客户端插件（模型列表获取）": "Client plugin (model list fetch)",
+  "— omp / Pi 的 provider 扩展：启动自动从网关拉模型列表，零静态清单":
+    "— provider extension for omp / Pi: fetches the model list from the gateway at startup, zero static list",
+  "安装插件": "Install the plugin",
+  "（在开发机上执行）：": "(run on your dev machine):",
+  "插件的 headers.User-Agent 与 promptCacheSessionHeader 已内建；模型列表 8 秒上限拉取，":
+    "The plugin's headers.User-Agent and promptCacheSessionHeader are built in; the model list is fetched with an 8s cap,",
+  "失败不卡启动，会话内": "failures do not block startup; in-session",
+  "可重拉。装成包后每次启动自动加载。": "re-fetches. Once packaged, it loads on every start.",
+  "版本": "Version",
+  "升级是显式动作：本页只提供能力，不会催促。出厂版本 = NoKeyOut 验证过的组合；":
+    "Upgrades are explicit: this page only offers the ability, never urges. Factory version = the NoKeyOut-verified combo;",
+  "自行升级测试前请先备份，失败会自动回滚到升级前版本。":
+    "back up before testing upgrades yourself; failures roll back automatically.",
+  "备份": "Backup", "立即备份": "Back up now",
+  "加密口令（可选，≥8 位；留空=不加密，仅本机 0600）":
+    "Passphrase (optional, ≥8 chars; empty = unencrypted, 0600 on device)",
+  "备份内容：网关全部状态（providers/真实 Key/网关密钥）+ 面板密钥 + 配置。可下载到别处保管。":
+    "Backup contents: full gateway state (providers / real keys / gateway keys) + panel keys + config. Download it somewhere safe.",
+  "暂无备份": "No backups yet",
+  "恢复": "Restore", "下载": "Download",
+  "升级 / 回退": "Upgrade / Rollback",
+  "版本号 x.y.z（或用右侧最新）": "version x.y.z (or use latest on the right)",
+  "升级到此版本": "Upgrade to this version",
+  "升级到最新": "Upgrade to latest",
+  "回退到上次已知良好": "Roll back to last known good",
+  "升级流程：拉镜像 → 重建网关 → 健康检查 → 一次真实调用冒烟；任一步失败自动回滚。":
+    "Upgrade flow: pull image → rebuild gateway → health check → one real-call smoke; any failure rolls back automatically.",
+  "整个网关 LLM 服务会中断": "The gateway LLM service is interrupted for",
+  "（拉镜像更久）。升级是版本行为，不影响已建密钥。":
+    "(longer while pulling the image). Upgrades are version-level and do not affect existing keys.",
+  "确定用 ": "Restore from ",
+  "？网关会停一会，当前网关状态被备份内容替换。":
+    "? The gateway stops briefly; current state is replaced by the backup contents.",
+  "该备份已加密，输入口令：": "This backup is encrypted, enter the passphrase:",
+  "恢复中…": "Restoring…",
+  "备份中…": "Backing up…",
+  "口令至少 8 位": "Passphrase needs at least 8 chars",
+  "给个版本号": "Enter a version",
+  "回退中…": "Rolling back…",
+  "已复制": "Copied",
+  "当前版本": "Current", "上游最新": "Upstream latest", "上次已知良好": "Last known good",
+  "备份数": "backups", "未知": "unknown", "未记录": "not recorded",
+};
+NK.t = s => (NK.lang === 'zh' ? s : (NK.I18N[s] ?? s));
+NK.apply = () => {
+  document.querySelectorAll('[placeholder]').forEach(el => el.placeholder = NK.t(el.placeholder));
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const edits = [];
+  for (let n; (n = walk.nextNode());) {
+    const s = n.textContent, t = s.trim();
+    if (t && NK.I18N[t]) edits.push([n, s, t]);
+  }
+  for (const [n, s, t] of edits) n.textContent = s.replace(t, NK.t(t));
+  const b = document.getElementById('nklang');
+  if (b) b.textContent = NK.t('EN');
+  document.documentElement.lang = NK.lang === 'zh' ? 'zh-CN' : 'en';
+};
+NK.switchLang = async () => {
+  try { await fetch('/api/lang', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lang: NK.lang === 'zh' ? 'en' : 'zh' }) }); } catch {}
+  location.reload();
+};
+const langReady = (async () => {
+  try { NK.lang = (await (await fetch('/api/lang')).json()).lang || 'zh'; } catch {}
+  NK.apply();
+  // 看板内容是 JS 动态渲染的，NK.apply() 不会翻译它；语言确定后重绘一次，
+  // 避免首屏（status/stats 先返回）用错语言停到下一次轮询。
+  if (typeof renderDash === 'function') renderDash();
+  const b = document.getElementById('nklang');
+  if (b) b.onclick = NK.switchLang;
+})();
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gwRoot = () => (GWURL || ('http://' + location.hostname + ':3425'));   // 客户端-facing 网关根
+const gw = () => gwRoot() + '/v1';
+
+let MODELS = [], SEL = new Set(), AGENT = null, GWURL = null, KR = [], AGENTS = [];
+let consoleLoaded = false;
+
+// agent 清单位于设备端（agents.go），Web 只取元数据；图标仍走 /api/icon/<name>。
+const agentName = a => NK.lang === 'zh' ? a.name : (a.nameEn || a.name);
+const agentTarget = a => NK.lang === 'zh' ? a.target : (a.targetEn || a.target);
+const agentNote = a => NK.lang === 'zh' ? a.note : (a.noteEn || a.note);
+const protoLabel = p => NK.t({ openai: 'OpenAI 兼容', anthropic: 'Anthropic 兼容', both: 'OpenAI / Anthropic' }[p] || p);
+
+function showTab(t) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
+  document.querySelectorAll('.tabpane').forEach(p => p.style.display = p.dataset.pane === t ? '' : 'none');
+  document.body.classList.toggle('magpie-open', t === 'magpie');
+  if (t === 'magpie' && !consoleLoaded) { consoleLoaded = true; $('#console').src = '/console/'; }
+  if (t === 'system') { sysinfo(); nkuStatus(); bklist(); screenLoad(); btnLoad(); }
+  if (t === 'models') { models(); keyring(); if (!AGENTS.length) loadAgents(); }
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$('#logout').onclick = async () => { await fetch('/logout', { method: 'POST' }); location.href = '/'; };
+
+// ---- 主页看板
+// 一次轮询拿到的 /api/status + /api/stats 存在 DB 里，五个渲染区分块更新。
+const DB = { status: null, stats: null, statusErr: null, statsErr: null, period: 'today' };
+try {
+  const p = localStorage.getItem('nk_dash_period');
+  if (p === 'today' || p === '7d' || p === '30d') DB.period = p;
+} catch {}
+
+const DBP = { today: '近1日', '7d': '近 7 天', '30d': '近 30 天' };
+const nf = new Intl.NumberFormat('en-US');
+const dbTokensLabel = () => NK.t({
+  today: '近1日 tokens', '7d': '近 7 天 tokens', '30d': '近 30 天 tokens',
+}[DB.period] || '近1日 tokens');
+const dbCallsLabel = () => NK.t({
+  today: '近1日调用', '7d': '近 7 天调用', '30d': '近 30 天调用',
+}[DB.period] || '近1日调用');
+
+function fmtN(n) {
+  if (n == null || n === '') return '—';
+  const v = Number(n);
+  if (!isFinite(v)) return '—';
+  const a = Math.abs(v);
+  const trim = s => s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+  if (a >= 1e9) return trim((v / 1e9).toFixed(a >= 1e10 ? 0 : 2)) + 'B';
+  if (a >= 1e6) return trim((v / 1e6).toFixed(a >= 1e7 ? 1 : 2)) + 'M';
+  if (a >= 1e4) return trim((v / 1e3).toFixed(a >= 1e5 ? 0 : 1)) + 'k';
+  return nf.format(Math.round(v));
+}
+function fmtPct(n) {
+  if (n == null || n === '') return '—';
+  const v = Number(n);
+  return isFinite(v) ? (Math.round(v * 10) / 10) + '%' : '—';
+}
+function fmtCost(n) {
+  if (n == null || n === '') return '—';
+  const v = Number(n);
+  if (!isFinite(v)) return '—';
+  if (v === 0) return '$0';
+  return '$' + (Math.abs(v) < 1 ? v.toFixed(3) : v.toFixed(2));
+}
+function fmtAge(s) {
+  if (s == null || s === '') return '—';
+  const v = Number(s);
+  if (!isFinite(v) || v < 0) return '—';
+  if (v < 1) return NK.t('刚刚');
+  if (v < 60) return Math.floor(v) + NK.t('秒前');
+  if (v < 3600) return Math.floor(v / 60) + NK.t('分钟前');
+  return Math.floor(v / 3600) + NK.t('小时前');
+}
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  if (d) return d + NK.t('天') + (h ? ' ' + h + NK.t('小时') : '');
+  if (h) return h + NK.t('小时') + (m ? ' ' + m + NK.t('分') : '');
+  return m + NK.t('分');
+}
+function dbUsage() {
+  const u = ((DB.stats || {}).usage || {})[DB.period];
+  if (u && (u.tokens != null || u.calls != null)) return u;
+    if (DB.period === 'today' && DB.stats && DB.stats.traffic) {
+    const t = DB.stats.traffic, tt = t.tokens_today || {};
+    return {
+      tokens: (Number(tt.input) || 0) + (Number(tt.output) || 0),
+      input: tt.input, output: tt.output, calls: t.calls_today, errors: t.errors_today,
+      cache_hit_pct: t.cache_hit_pct, cache_read: null, cost: null, buckets: [],
+    };
+  }
+  return {};
+}
+
+async function status() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    DB.status = s; DB.statusErr = null;
+    if (s.gatewayUrl) GWURL = s.gatewayUrl.replace(/\/+$/, '');
+    if (s.pluginUrl) {
+      const el = document.getElementById('plugincmd');
+      if (el) el.value = `omp plugin install git:${s.pluginUrl}\n# 本地开发：omp plugin link "<仓库路径>/NoKeyOut/omp-provider"`;
+    }
+  } catch (e) {
+    DB.statusErr = String(e && e.message ? e.message : e);
+  }
+  renderDash();
+}
+async function stats() {
+  try {
+    const s = await (await fetch('/api/stats')).json();
+    DB.stats = s; DB.statsErr = null;
+  } catch (e) {
+    DB.statsErr = String(e && e.message ? e.message : e);
+  }
+  renderDash();
+}
+
+function renderDash() {
+  document.querySelectorAll('#dbperiod button').forEach(b =>
+    b.classList.toggle('on', b.dataset.p === DB.period));
+  renderDashErr(); renderHero(); renderKpis(); renderChart(); renderPools(); renderSys();
+}
+
+function renderDashErr() {
+  const el = $('#dbnerr'); if (!el) return;
+  const msgs = [];
+  if (DB.statusErr) msgs.push(NK.t('状态获取失败') + ': ' + DB.statusErr);
+  if (DB.status && DB.status.gateway && DB.status.gateway.status !== 200)
+    msgs.push((DB.status.gateway.status ? NK.t('网关异常') : NK.t('网关不可达')) +
+      (DB.status.gateway.status ? ` (HTTP ${DB.status.gateway.status})` : ''));
+  if (DB.statsErr) msgs.push(NK.t('统计获取失败') + ': ' + DB.statsErr);
+  if (DB.stats && DB.stats.error) msgs.push(NK.t('统计异常') + ': ' + DB.stats.error);
+  if (DB.stats && DB.stats.dash && DB.stats.dash.stale)
+    msgs.push(NK.t('用量数据已过期') + ' (' + fmtAge(DB.stats.usage_age_s) + ')');
+  el.hidden = msgs.length === 0;
+  el.innerHTML = msgs.map(m => `<div>${esc(m)}</div>`).join('');
+}
+
+function renderHero() {
+  const s = DB.status;
+  const dot = $('#dbdot'), h = $('#dbhealth'), sub = $('#dbhealthsub');
+  if (!dot || !h || !sub) return;
+  let tone = 'warn', title = NK.t('加载中…'), detail = '';
+  if (s && s.gateway) {
+    if (s.gateway.status === 200) {
+      tone = 'ok'; title = NK.t('网关正常');
+      detail = `HTTP 200 · ${s.gateway.models} ${NK.t('个模型')}`;
+    } else if (!s.gateway.status) {
+      tone = 'bad'; title = NK.t('网关不可达');
+    } else {
+      tone = 'bad'; title = NK.t('网关异常'); detail = `HTTP ${s.gateway.status}`;
+    }
+  } else if (DB.statusErr) {
+    tone = 'bad'; title = NK.t('状态获取失败');
+  }
+  dot.className = 'dbdot ' + tone;
+  h.textContent = title;
+  sub.textContent = detail;
+}
+
+function renderKpis() {
+  const el = $('#dbkpis'); if (!el) return;
+  const v = dbUsage();
+  const errs = Number(v.errors || 0);
+  const calls = Number(v.calls) || 0;
+  const errRate = calls > 0 && v.errors != null ? 100 * errs / calls : null;
+  const okRate = errRate == null ? null : Math.max(0, 100 - errRate);
+  const cards = [
+    [dbTokensLabel(), fmtN(v.tokens), `${NK.t('输入')} ${fmtN(v.input)} · ${NK.t('输出')} ${fmtN(v.output)}`, ''],
+    [dbCallsLabel(), fmtN(v.calls), `${NK.t('成功率')} ${fmtPct(okRate)}`, ''],
+    [NK.t('缓存命中'), fmtPct(v.cache_hit_pct), `${NK.t('缓存读')} ${fmtN(v.cache_read)}`, ''],
+    [NK.t('估算成本'), fmtCost(v.cost), NK.t('按 magpie 价格估算'), ''],
+    [NK.t('平均 tokens/次'), v.calls ? fmtN(Number(v.tokens) / Number(v.calls)) : '—', NK.t('tokens ÷ 调用次数'), ''],
+    [NK.t('错误'), fmtN(v.errors), `${NK.t('错误率')} ${fmtPct(errRate)}`, errs ? 'bad' : ''],
+  ];
+  el.innerHTML = cards.map(([l, val, sub, tone]) =>
+    `<div class="dbkpi ${tone}"><div class="dbkpi-label">${esc(l)}</div>` +
+    `<div class="dbkpi-value">${esc(val)}</div><div class="dbkpi-sub">${esc(sub)}</div></div>`).join('');
+}
+
+function renderChart() {
+  const el = $('#dbchart'), sum = $('#dbchartsum');
+  if (!el) return;
+  if (!DB.stats) {
+    if (sum) sum.textContent = '';
+    el.innerHTML = `<div class="dbempty">${NK.t('采集中…')}</div>`;
+    return;
+  }
+  const v = dbUsage();
+  const raw = Array.isArray(v.buckets) ? v.buckets : [];
+  const data = raw.map(b => ({ label: String((b && b.label) || ''), tokens: Number(b && b.tokens) || 0 }));
+  const total = data.reduce((a, b) => a + b.tokens, 0) || Number(v.tokens) || 0;
+  if (total > 0 && (!data.length || !data.some(d => d.tokens > 0))) {
+    data.length = 0;
+    data.push({ label: '', tokens: total });
+  }
+  if (sum) {
+    // 只报分布（峰值/均值），总量与调用数已在 KPI 卡片里，不重复。
+    sum.textContent = raw.length > 1
+      ? `${NK.t('峰值')} ${fmtN(Math.max(...data.map(d => d.tokens), 0))} tokens · ` +
+        `${NK.t('平均')} ${fmtN(total / data.length)}`
+      : '';
+  }
+  if (!data.length) {
+    el.innerHTML = `<div class="dbempty">${NK.t('暂无趋势数据')}</div>`;
+    return;
+  }
+  const W = 900, H = 180, L = 12, R = 12, T = 14, B = 26;
+  const n = data.length, max = Math.max(...data.map(d => d.tokens), 1);
+  const step = (W - L - R) / n, bw = Math.max(1, Math.min(step * 0.72, 26));
+  const yOf = val => T + (H - T - B) * (1 - val / max);
+  const grid = [0, 0.5, 1].map(f => {
+    const y = yOf(max * f);
+    return `<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}" ` +
+      `stroke="var(--border, #8884)" stroke-dasharray="${f ? '3 4' : ''}"/>` +
+      `<text x="${L}" y="${(y - 3).toFixed(1)}" font-size="9" fill="var(--muted, #888)">${fmtN(max * f)}</text>`;
+  }).join('');
+  const bars = data.map((d, i) => {
+    const h = (H - T - B) * (d.tokens / max), x = L + i * step + (step - bw) / 2, y = H - B - h;
+    const label = d.label ? d.label + ': ' : '';
+    return `<g><title>${esc(label + fmtN(d.tokens) + ' tokens')}</title>` +
+      `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" ` +
+      `rx="2" fill="var(--accent, #06c)" opacity=".85"/></g>`;
+  }).join('');
+  const idx = n <= 4 ? data.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  const short = s => {
+    s = String(s || '');
+    if (s.length <= 12) return s;
+    const m = s.match(/[T ](\d{2}:\d{2})/);
+    return m ? m[1] : s.slice(-5);
+  };
+  const labels = idx.map(i => {
+    const d = data[i];
+    if (!d || !d.label) return '';
+    const x = L + (i + 0.5) * step;
+    const anchor = n === 1 ? 'middle' : (i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle'));
+    return `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}" font-size="10" ` +
+      `fill="var(--muted, #888)">${esc(short(d.label))}</text>`;
+  }).join('');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(NK.t('用量趋势'))}">` +
+    `<title>${esc(NK.t('用量趋势'))}</title>${grid}${bars}${labels}</svg>`;
+}
+
+function renderPools() {
+  const el = $('#dbpools'), sum = $('#dbpoolsum');
+  if (!el) return;
+  if (!DB.stats) {
+    if (sum) sum.textContent = '';
+    el.innerHTML = `<div class="dbempty">${NK.t('采集中…')}</div>`;
+    return;
+  }
+  const pools = Array.isArray(DB.stats.pools) ? DB.stats.pools : [];
+  const groups = new Map();
+  for (const p of pools) {
+    const key = [p.provider || '', p.account || '', p.name || ''].join('|');
+    if (!groups.has(key)) groups.set(key, {
+      name: p.name || p.provider || '?', kind: p.kind || '', account: p.account || '', items: [],
+    });
+    groups.get(key).items.push(p);
+  }
+  const alerts = pools.filter(p => p.err || p.state === 1 || p.state === 2).length;
+  if (sum) sum.textContent = pools.length
+    ? `${groups.size} ${NK.t('个供应商/账号')} · ${pools.length} ${NK.t('条额度')}` +
+      (alerts ? ` · ${alerts} ${NK.t('告警')}` : '')
+    : NK.t('暂无额度数据');
+  if (!pools.length) {
+    el.innerHTML = `<div class="dbempty">${NK.t('magpie 未配置供应商，或还没有可用额度')}</div>`;
+    return;
+  }
+  el.innerHTML = [...groups.values()].map(g => {
+    const rows = g.items.map(p => {
+      if (p.err) return `<div class="dbpool-row"><div class="dbpool-err">${esc(p.err)}</div></div>`;
+      if (p.mode === 'balance' || (p.amount != null && p.used_pct == null)) {
+        const amt = p.amount == null ? '—' :
+          (p.unit ? `${p.amount} ${p.unit}` : String(p.amount));
+        const tone = p.state === 2 ? 'bad' : p.state === 1 ? 'warn' : '';
+        return `<div class="dbpool-row"><div class="dbpool-bal ${tone}">${esc(amt)}</div>` +
+          `<div class="dbpool-note">${NK.t('固定余额')}</div></div>`;
+      }
+      const used = p.used_pct == null ? null : Math.max(0, Math.min(100, Number(p.used_pct)));
+      const remain = p.remain_pct == null ? (used == null ? null : 100 - used) :
+        Math.max(0, Math.min(100, Number(p.remain_pct)));
+      const tone = p.state === 2 ? 'bad' : p.state === 1 ? 'warn' : p.state === 3 ? 'muted' : '';
+      const meter = used == null ? '' :
+        `<div class="dbmeter" role="progressbar" aria-valuemin="0" aria-valuemax="100" ` +
+        `aria-valuenow="${Math.round(used)}"><i class="${tone}" style="width:${used}%"></i></div>`;
+      const right = used == null ? NK.t('暂无数据') :
+        `${NK.t('已用')} ${fmtPct(used)} · ${NK.t('剩余')} ${fmtPct(remain)}`;
+      let reset = '';
+      if (p.has_reset && p.reset_at) {
+        const left = Number(p.reset_at) * 1000 - Date.now();
+        reset = left <= 0 ? NK.t('即将重置') : NK.t('重置') + ' ' + fmtDur(left / 1000) + NK.t('后');
+      }
+      return `<div class="dbpool-row">` +
+        `<div class="dbpool-lab"><span>${esc(p.window || NK.t('额度'))}</span><span>${esc(right)}</span></div>` +
+        meter + (reset ? `<div class="dbpool-note">${esc(reset)}</div>` : '') + `</div>`;
+    }).join('');
+    return `<div class="dbpool"><div class="dbpool-h"><b>${esc(g.name)}</b>` +
+      (g.kind ? `<span class="badge">${esc(g.kind)}</span>` : '') +
+      (g.account ? `<span class="dbpool-acct">${esc(g.account)}</span>` : '') +
+      `</div>${rows}</div>`;
+  }).join('');
+}
+
+function renderSys() {
+  const el = $('#dbsys'); if (!el) return;
+  const s = DB.status, st = DB.stats;
+  const gwUrl = (s && s.gatewayUrl) || ('http://' + location.hostname + ':3425/v1');
+  const web = s && s.web ? (s.web.status ? NK.t('可达') : NK.t('不可达')) : '—';
+  const age = st ? fmtAge(st.usage_age_s) : '—';
+  const ver = s && s.version ? s.version : '—';
+  const rows = [
+    [NK.t('网关地址'), `<code>${esc(gwUrl)}</code>` +
+      `<button class="act iconbtn" type="button" data-copy="${esc(gwUrl)}">${NK.t('复制')}</button>`],
+    [NK.t('magpie web'), `${web}${s && s.web && !s.web.key_configured ? ' · ' + NK.t('web key 未配置') : ''}`],
+    [NK.t('数据更新'), `${age}${st && st.dash && st.dash.stale ? ' · ' + NK.t('已过期') : ''}`],
+    [NK.t('面板版本'), esc(ver)],
+  ];
+  el.innerHTML = rows.map(([k, v]) =>
+    `<div><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join('');
+}
+
+// ---- 模型列表（原表格 + 全选）
+async function models() {
+  const r = await fetch('/api/models');
+  if (!r.ok) { $('#mcount').textContent = NK.t('拉取失败: ') + r.status; return; }
+  MODELS = (await r.json()).data || [];
+  $('#mcount').textContent = MODELS.length + NK.t(' 个模型');
+  renderTable();
+}
+function renderTable() {
+  $('#models').innerHTML = MODELS.map(m =>
+    `<tr class="${SEL.has(m.id) ? 'sel' : ''}">
+       <td><input type="checkbox" class="msel" data-id="${esc(m.id)}" ${SEL.has(m.id) ? 'checked' : ''}></td>
+       <td>${esc(m.id)}</td><td>${esc(m.magpie_label || m.display_name || m.owned_by || '')}</td>
+       <td>${(m.context_window || 0).toLocaleString()}</td>
+       <td>${m.reasoning ? '✓' : ''}</td></tr>`).join('');
+  document.querySelectorAll('.msel').forEach(cb => cb.onchange = () => {
+    cb.checked ? SEL.add(cb.dataset.id) : SEL.delete(cb.dataset.id);
+    renderTable();
+  });
+  $('#selAll').checked = MODELS.length > 0 && SEL.size === MODELS.length;
+  $('#selAll2').checked = $('#selAll').checked;
+  renderScope();
+}
+function toggleAll() {
+  if (MODELS.length && SEL.size === MODELS.length) SEL.clear();
+  else MODELS.forEach(m => SEL.add(m.id));
+  renderTable();
+}
+$('#selAll').onclick = toggleAll;
+$('#selAll2').onclick = toggleAll;
+$('#reload').onclick = models;
+
+// ---- 密钥环
+async function keyring() {
+  try {
+    const r = await fetch('/api/keyring', { cache: 'no-store' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    KR = j.keys || [];
+    const sel = $('#krsel'), prev = sel.value;
+    sel.innerHTML = '<option value="">' + NK.t('— 选择密钥 —') + '</option>' +
+      KR.map(k => `<option value="${esc(k.name)}">${esc(k.name)} · …${esc(k.masked)}</option>`).join('');
+    if (prev && KR.some(k => k.name === prev)) sel.value = prev;
+  } catch (e) {
+    KR = [];
+    $('#krsel').innerHTML = '<option>' + NK.t('加载失败') + '</option>';
+  }
+}
+function keysPaneVisible() {
+  const p = document.querySelector('[data-pane="models"]');
+  return !!p && p.style.display !== 'none';
+}
+window.addEventListener('focus', () => { if (keysPaneVisible()) keyring(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && keysPaneVisible()) keyring();
+});
+NK.I18N['作用域 '] = 'scope ';
+NK.I18N['全部模型'] = 'all models';
+NK.I18N['粘贴'] = 'pasted';
+NK.I18N['加载失败'] = 'load failed';
+NK.I18N['失败'] = 'failed';
+NK.I18N['先选一把网关密钥'] = 'Pick a gateway key first';
+NK.I18N['— 选择密钥 —'] = '— select a key —';
+NK.I18N['选择一把密钥查看只读信息。'] = 'Select a key to view its read-only details.';
+NK.I18N['名称'] = 'Name';
+NK.I18N['作用域'] = 'Scope';
+NK.I18N['来源'] = 'Source';
+NK.I18N['面板创建'] = 'Created by panel';
+NK.I18N['密钥尾号'] = 'Key suffix';
+NK.I18N['创建时间'] = 'Created';
+NK.I18N['密钥环为空。去 magpie 创建密钥后，这里会自动同步。'] =
+  'The keyring is empty. Keys created in magpie appear here automatically.';
+NK.I18N['先选 agent'] = 'Pick an agent first';
+NK.I18N['生成失败'] = 'generation failed';
+NK.I18N['已复制 ✓'] = 'Copied ✓';
+NK.I18N['已选 '] = 'Selected ';
+NK.I18N[' 个模型 → Codex 静态清单与 OpenCode/Crush/Continue 等配置的模型列表只含这些；密钥若在 magpie 里设 Models 作用域，照此清单勾选。'] =
+  ' models → Codex static lists and OpenCode/Crush/Continue configs will contain only these; if the key is Models-scoped in magpie, check this same list.';
+NK.I18N['未选模型：omp/env/Claude 配置不需要清单；Codex/OpenCode/Crush/Continue/Qwen/Zed 需要勾选后才能写入模型。'] =
+  'No selection: omp/env/Claude configs need no list; Codex/OpenCode/Crush/Continue/Qwen/Zed only get models after you check them.';
+NK.I18N['OpenAI 兼容'] = 'OpenAI-compatible';
+NK.I18N['Anthropic 兼容'] = 'Anthropic-compatible';
+NK.I18N['配置由设备生成，尽量内嵌所选密钥；Zed 等少数客户端按提示用环境变量携带。密钥值不显示，保存后请自行保管。'] =
+  'The device generates the config and embeds the key where the client allows it; Zed and similar clients carry it via environment variables. Key values are not displayed—store the result carefully.';
+NK.I18N['确定恢复吗'] = 'Confirm restore';
+NK.I18N['一个备份文件'] = 'a backup file';
+
+// ---- 生成配置（服务端，尽量内嵌真密钥）
+$('#gen').onclick = async () => {
+  const name = $('#krsel').value;
+  if (!name) { alert(NK.t('先选一把网关密钥')); return; }
+  if (!AGENT) { alert(NK.t('先选 agent')); return; }
+  const r = await fetch('/api/gen-config', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent: AGENT.id, keyName: name, models: [...SEL] }) });
+  const j = await r.json();
+  if (!j.ok) { alert(j.error || NK.t('生成失败')); return; }
+  $('#snip').value = j.config;
+  const target = NK.lang === 'zh' ? j.target : (j.targetEn || j.target);
+  const note = NK.lang === 'zh' ? j.note : (j.noteEn || j.note);
+  $('#gennote').textContent = [target, protoLabel(j.protocol), note].filter(Boolean).join(' · ');
+};
+
+// ---- agent 下拉（icon + 名字 + 目标位置）
+async function loadAgents() {
+  await langReady;
+  try {
+    const r = await fetch('/api/agents');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    AGENTS = j.agents || [];
+  } catch (e) {
+    AGENTS = [];
+  }
+  if (AGENT) AGENT = AGENTS.find(a => a.id === AGENT.id) || null;
+  renderAgentMenu();
+  renderAgentMeta();
+}
+function renderAgentMeta() {
+  const el = $('#agenthint');
+  if (!AGENT) { el.textContent = ''; return; }
+  el.textContent = [agentTarget(AGENT), protoLabel(AGENT.protocol), agentNote(AGENT)]
+    .filter(Boolean).join(' · ');
+}
+function renderAgentMenu() {
+  $('#ddmenu').innerHTML = AGENTS.map(a =>
+    `<div class="item" data-a="${esc(a.id)}" title="${esc(agentTarget(a))}">
+       <img src="/api/icon/${esc(a.icon || 'zzz-generic')}" alt="">
+       <span>${esc(agentName(a))}</span><span class="sub">${esc(agentTarget(a))}</span></div>`).join('');
+  $('#ddmenu').querySelectorAll('.item').forEach(el => el.onclick = () => {
+    const a = AGENTS.find(x => x.id === el.dataset.a);
+    if (!a) return;
+    AGENT = a;
+    $('#dd').classList.remove('open');
+    $('#snip').value = '';
+    $('#gennote').textContent = '';
+    const ic = $('#ddicon');
+    ic.src = '/api/icon/' + (AGENT.icon || 'zzz-generic');
+    ic.style.display = '';
+    $('#ddlabel').textContent = agentName(AGENT);
+    renderAgentMeta();
+  });
+}
+$('#ddbtn').onclick = () => $('#dd').classList.toggle('open');
+document.addEventListener('click', e => { if (!$('#dd').contains(e.target)) $('#dd').classList.remove('open'); });
+
+// ---- 生成带占位密钥的配置
+function renderScope() {
+  $('#scopeinfo').textContent = SEL.size
+    ? `${NK.t('已选 ')}${SEL.size}${NK.t(' 个模型 → Codex 静态清单与 OpenCode/Crush/Continue 等配置的模型列表只含这些；密钥若在 magpie 里设 Models 作用域，照此清单勾选。')}`
+    : NK.t('未选模型：omp/env/Claude 配置不需要清单；Codex/OpenCode/Crush/Continue/Qwen/Zed 需要勾选后才能写入模型。');
+}
+$('#copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('#snip').value); }
+  catch { $('#snip').select(); document.execCommand('copy'); }
+  $('#copyhint').textContent = NK.t('已复制 ✓');
+  setTimeout(() => $('#copyhint').textContent = '', 2000);
+};
+// 去 magpie 的 Gateway keys 页（SPA hash 路由 #gateway）
+function openGatewayKeys() {
+  showTab('magpie');
+  if (!consoleLoaded) { consoleLoaded = true; }
+  $('#console').src = '/console/#gateway';
+}
+$('#krjump').onclick = openGatewayKeys;
+
+// ---- 系统页签：NoKeyOut 自更新
+let nkuTimer = null;
+function nkuRender(j) {
+  const st = (j && j.state) || {};
+  const bits = [];
+  if (j && j.current) bits.push(NK.t('当前') + ' ' + j.current);
+  if (st.state) bits.push(NK.t('状态') + ' ' + st.state + (st.version ? ' ' + st.version : ''));
+  if (st.message) bits.push(st.message);
+  if (st.error) bits.push(NK.t('错误') + ' ' + st.error);
+  $('#nkuState').textContent = bits.join(' · ') || '—';
+  const active = ['starting', 'running', 'rolling_back'].includes(st.state);
+  if (active && !nkuTimer) nkuTimer = setInterval(nkuStatus, 3000);
+  if (!active && nkuTimer) { clearInterval(nkuTimer); nkuTimer = null; }
+}
+async function nkuStatus() {
+  try {
+    const r = await fetch('/api/system/update');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    nkuRender(j);
+  } catch (e) {
+    $('#nkuState').textContent = NK.t('更新器不可用') + '：' + e.message;
+  }
+}
+async function nkuCall(path) {
+  $('#nkuMsg').textContent = '…';
+  try {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    if (j.latest) $('#nkuMsg').textContent = NK.t('最新') + ' ' + j.latest + (j.current ? ' · ' + NK.t('当前') + ' ' + j.current : '');
+    else $('#nkuMsg').textContent = j.out || NK.t('已提交');
+    await nkuStatus();
+  } catch (e) {
+    $('#nkuMsg').textContent = NK.t('失败') + '：' + e.message;
+  }
+}
+$('#nkuCheck').onclick = () => nkuCall('/api/system/update/check');
+$('#nkuInstall').onclick = () => nkuCall('/api/system/update/install');
+$('#nkuRollback').onclick = () => nkuCall('/api/system/update/rollback');
+
+// ---- 系统页签
+async function sysinfo() {
+  try {
+    const s = await (await fetch('/api/system/info')).json();
+    $('#verinfo').innerHTML =
+      `<span class="kv">${NK.t('当前版本')} <b>${esc(s.current || NK.t('未知'))}</b></span>` +
+      `<span class="kv">${NK.t('上游最新')} <b>${esc(s.latest || NK.t('未知'))}</b></span>` +
+      `<span class="kv">${NK.t('上次已知良好')} <b>${esc(s.last_good || '—')}</b></span>` +
+      `<span class="kv">NoKeyOut <b>${esc(s.nokeyout || NK.t('未记录'))}</b></span>` +
+      `<span class="kv">${NK.t('备份数')} <b>${s.backups}</b></span>`;
+    if (s.latest && !$('#upver').value) $('#upLatest').textContent = `${NK.t('升级到最新')}（${s.latest}）`;
+    $('#rb').disabled = !s.last_good;
+  } catch (e) { $('#verinfo').textContent = NK.t('加载失败'); }
+}
+async function bklist() {
+  try {
+    const j = await (await fetch('/api/system/backups')).json();
+    $('#bklist').innerHTML = (j.backups || []).map(b =>
+      `<div class="row" style="justify-content:space-between">
+         <span>${esc(b.name)} <span class="muted">${(b.bytes/1048576).toFixed(1)}MB · ${esc(b.mtime)}</span></span>
+         <span>
+           <a href="/api/system/backup/${encodeURIComponent(b.name)}"><button class="act">${NK.t('下载')}</button></a>
+           <button class="act" onclick="restoreBk('${esc(b.name)}')">${NK.t('恢复')}</button>
+         </span></div>`).join('') || `<span class="muted">${NK.t('暂无备份')}</span>`;
+  } catch (e) { $('#bklist').textContent = NK.t('加载失败'); }
+}
+window.restoreBk = async (name) => {
+  if (!confirm(`${NK.t('确定用 ')}${name}${NK.t('？网关会停一会，当前网关状态被备份内容替换。')}`)) return;
+  let pw = '';
+  if (name.endsWith('.enc')) { pw = prompt(NK.t('该备份已加密，输入口令：')) || ''; if (!pw) return; }
+  $('#sysout').textContent = NK.t('恢复中…');
+  const r = await fetch('/api/system/restore', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: name, passphrase: pw }) });
+  const j = await r.json();
+  $('#sysout').textContent = (j.ok ? '✅ ' : '❌ ') + (j.out || j.error || '');
+  sysinfo(); bklist();
+};
+$('#bk').onclick = async () => {
+  const pw = $('#bkpw').value.trim();
+  if (pw && pw.length < 8) { alert(NK.t('口令至少 8 位')); return; }
+  $('#bk').disabled = true; $('#sysout').textContent = NK.t('备份中…');
+  try {
+    const j = await (await fetch('/api/system/backup', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase: pw }) })).json();
+    $('#sysout').textContent = j.ok ? ('✅ ' + j.file) : ('❌ ' + (j.error || NK.t('失败')));
+    bklist(); sysinfo();
+  } finally { $('#bk').disabled = false; }
+};
+async function doUpgrade(ver, label) {
+  if (!ver) { alert(NK.t('给个版本号')); return; }
+  if (!confirm(`${NK.t('确定升级 magpie 到 ')}${ver}？\n${NK.t('网关会中断约 10–30 秒（拉镜像更久）；失败会自动回滚。\n建议先备份再升。')}`)) return;
+  $('#sysout').textContent = `${label} ${ver} …${NK.t('（拉镜像可能要几分钟，别关页面）')}`;
+  try {
+    const j = await (await fetch('/api/system/upgrade', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: ver }) })).json();
+    $('#sysout').textContent = (j.ok ? '✅ ' : '❌ ') + (j.out || j.error || '');
+    sysinfo(); bklist();
+  } catch (e) { $('#sysout').textContent = NK.t('请求失败（可能超时）：') + e; }
+}
+NK.I18N['确定升级 magpie 到 '] = 'Upgrade magpie to ';
+NK.I18N['网关会中断约 10–30 秒（拉镜像更久）；失败会自动回滚。\n建议先备份再升。'] =
+  'The gateway is interrupted for ~10–30s (longer when pulling the image); failures roll back automatically.\nBack up first if possible.';
+NK.I18N['（拉镜像可能要几分钟，别关页面）'] = '(pulling may take minutes; keep this page open)';
+NK.I18N['请求失败（可能超时）：'] = 'Request failed (timeout?): ';
+NK.I18N['升级到'] = 'Upgrading to';
+NK.I18N['回退到上次已知良好版本？网关同样会中断十几秒。'] =
+  'Roll back to last known good? The gateway is likewise interrupted for a few seconds.';
+$('#up').onclick = () => doUpgrade($('#upver').value.trim(), NK.t('升级到'));
+$('#upLatest').onclick = async () => {
+  const s = await (await fetch('/api/system/info')).json();
+  doUpgrade(s.latest, NK.t('升级到最新'));
+};
+$('#rb').onclick = async () => {
+  if (!confirm(NK.t('回退到上次已知良好版本？网关同样会中断十几秒。'))) return;
+  $('#sysout').textContent = NK.t('回退中…');
+  const j = await (await fetch('/api/system/rollback', { method: 'POST' })).json();
+  $('#sysout').textContent = (j.ok ? '✅ ' : '❌ ') + (j.out || j.error || '');
+  sysinfo();
+};
+
+// ---- 系统页签：屏幕模块（小屏显示哪几块；GET/POST /api/screen/modules）
+NK.I18N['屏幕模块'] = 'Screen modules';
+NK.I18N['用户按键'] = 'User button';
+NK.I18N['板上 USER 键的默认动作是熄屏 / 亮屏；端口开放（ADMIN）期间屏幕强制常亮，拨回 LOCK 后才能熄屏。动作映射保存在设备上，屏幕开关状态只影响本次运行。'] =
+  'The onboard USER key defaults to screen off / on; while the management port is open (ADMIN) the screen stays on and can only be turned off after flipping back to LOCK. The action mapping is stored on the device, while the screen power state only affects this run.';
+NK.I18N['按下 USER 键'] = 'On USER key press';
+NK.I18N['每次重启/上电都以亮屏启动（开关状态不落盘）。'] =
+  'Every reboot / power-on starts with the screen on (the power state is not persisted).';
+NK.I18N['按键未启用（USER_BUTTON_GPIO=-1）'] = 'Button disabled (USER_BUTTON_GPIO=-1)';
+NK.I18N['小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤ 240px」是唯一约束'] =
+  'The small screen shows up to 3 modules; the order is the top-to-bottom order; the only constraint is that slot heights must add up to ≤ 240px';
+NK.I18N['空'] = 'Empty';
+NK.I18N['配额简易模式（一行一条）'] = 'Compact quota rows (one line each)';
+NK.I18N['配额'] = 'Quota';
+NK.I18N['用量'] = 'Usage';
+NK.I18N['近24小时用量'] = 'Last 24 hours';
+NK.I18N['近7日用量'] = 'Last 7 days';
+NK.I18N['近30日用量'] = 'Last 30 days';
+NK.I18N['保存'] = 'Save';
+NK.I18N['已用 '] = 'Used ';
+NK.I18N[' / '] = ' / ';
+NK.I18N[' px'] = ' px';
+NK.I18N['超出 '] = 'Over by ';
+NK.I18N['有重复模块：'] = 'Duplicate module: ';
+NK.I18N['已保存'] = 'Saved';
+NK.I18N['保存失败'] = 'save failed';
+NK.I18N['自定义模块'] = 'Custom modules';
+NK.I18N[' 元素'] = ' elements';
+NK.I18N['编辑'] = 'Edit';
+NK.I18N['确定'] = 'OK';
+NK.I18N['取消'] = 'Cancel';
+NK.I18N['删除'] = 'Delete';
+NK.I18N['？'] = '?';
+NK.I18N['标识'] = 'ID';
+NK.I18N['标识非法（小写字母/数字/_-，≤16 字符）'] = 'Invalid ID (lowercase letters, digits, _-, ≤16 chars)';
+NK.I18N['名称'] = 'Name';
+NK.I18N['类型'] = 'Type';
+NK.I18N['字段'] = 'Field';
+NK.I18N['字段路径'] = 'field path';
+NK.I18N['文本内容'] = 'text';
+NK.I18N['标签'] = 'Label';
+NK.I18N['格式'] = 'Format';
+NK.I18N['单位'] = 'Unit';
+NK.I18N['添加元素'] = 'Add element';
+NK.I18N['高度 '] = 'Height ';
+NK.I18N['最多 '] = 'at most ';
+NK.I18N[' 个元素'] = ' elements';
+// 元素取值来源（字段 / 配额）与实时预览
+NK.I18N['来源'] = 'Source';
+NK.I18N['任意'] = 'Any';
+NK.I18N['该类型只支持字段'] = 'this element type only supports a field';
+NK.I18N['剩余%'] = 'Remain %';
+NK.I18N['已用%'] = 'Used %';
+NK.I18N['已用'] = 'Used';
+NK.I18N['总量'] = 'Total';
+NK.I18N['窗口'] = 'Window';
+NK.I18N['重置'] = 'Reset';
+NK.I18N['供应商'] = 'Provider';
+NK.I18N['指标'] = 'Metric';
+NK.I18N['预览用设备当前实时数据渲染，不保存、不写入设备配置'] =
+  "Preview renders with the device's current live data; nothing is saved or written to the device";
+NK.I18N['预览失败：'] = 'preview failed: ';
+NK.I18N['数值'] = 'Value';
+NK.I18N['成对行'] = 'Rows';
+NK.I18N['进度条'] = 'Bars';
+NK.I18N['迷你趋势'] = 'Spark';
+NK.I18N['文本'] = 'Text';
+NK.I18N['留空'] = 'Empty slot';
+NK.I18N['自定义'] = 'Custom';
+NK.I18N['详细配额显示最要紧的 3 条；简易配额从第 4 条接续（至多 5 条，不重复）'] =
+  'Quota shows the top 3 windows; Quota (compact) continues from the 4th (up to 5, no repeats)';
+NK.I18N['取值'] = 'Value';
+NK.I18N['上移'] = 'Move up';
+NK.I18N['下移'] = 'Move down';
+NK.I18N['至少 1 个元素'] = 'At least 1 element';
+NK.I18N['没有元素'] = 'No elements';
+NK.I18N['当前屏上'] = 'On screen';
+NK.I18N['设备屏 240×240 · 实时数据'] = 'Device screen 240×240 · live data';
+NK.I18N['预览不保存、不写入设备配置'] = 'Preview only — nothing is saved or written to the device';
+NK.I18N['% 屏高'] = '% of screen';
+
+const SCR = { budget: 0, avail: [], choices: [], periods: ['today'],
+              mods: [], quotas: [], usage: 'today', compact: false, bad: true };
+// 模块对象（只剩内置模块）
+const scrMod = id => SCR.avail.find(m => m.id === id) || null;
+const scrLabel = id => { const m = scrMod(id); return (m && m.label && m.label.zh) || id; };
+// 已选模块（顺序 = 屏上自上而下）
+const scrPicked = () => SCR.mods.filter(Boolean);
+// 槽高：后端 moduleInfoList 的 height 已含尾部间隔
+const scrSlotH = id => { const m = scrMod(id); return m ? (m.height || 0) : 0; };
+const scrModDesc = id => {
+  const m = scrMod(id);
+  if (!m) return '';
+  const d = m.desc || {};
+  return (NK.lang === 'zh' ? d.zh : d.en) || '';
+};
+
+// 模块行：下拉 + 槽高 + ↑/↓/×（顺序即屏上顺序）
+function scrModsRender() {
+  const box = $('#scrrows');
+  if (!box) return;
+  const opts = sel => [`<option value="">${esc(NK.t('空'))}</option>`].concat(
+    SCR.avail.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(NK.t(m.label.zh))}</option>`)
+  ).join('');
+  box.innerHTML = SCR.mods.map((id, i) => `<div class="scrrow" data-i="${i}">
+      <span class="scridx muted">${i + 1}</span>
+      <div class="scrroflin">
+        <select class="scrsel">${opts(id)}</select>
+        <div class="scrdesc muted">${id ? esc(NK.t(scrModDesc(id))) : NK.t('留空')}</div>
+      </div>
+      <span class="scrh muted">${id ? scrSlotH(id) + ' px' : '—'}</span>
+      <button class="act scrmup"${i === 0 ? ' disabled' : ''}>↑</button>
+      <button class="act scrmdn"${i === SCR.mods.length - 1 ? ' disabled' : ''}>↓</button>
+      <button class="act scrmdel">×</button>
+    </div>`).join('') +
+    `<div class="row"><button class="act" id="scrmadd">添加模块</button>
+       <span class="muted">${esc(NK.t('顺序即屏上自上而下；槽高合计 ≤ 240px（剩余空间自动均摊，铺满整屏）'))}</span></div>`;
+  box.querySelectorAll('.scrrow').forEach(row => {
+    const i = +row.dataset.i;
+    row.querySelector('.scrsel').onchange = e => {
+      SCR.mods[i] = e.target.value;
+      scrModsRender();
+      screenUpdate();
+    };
+    row.querySelector('.scrmup').onclick = () => scrModMove(i, -1);
+    row.querySelector('.scrmdn').onclick = () => scrModMove(i, +1);
+    row.querySelector('.scrmdel').onclick = () => {
+      SCR.mods.splice(i, 1);
+      scrModsRender();
+      screenUpdate();
+    };
+  });
+  const add = $('#scrmadd');
+  if (add) add.onclick = () => {
+    const used = new Set(scrPicked());
+    const m = SCR.avail.find(x => !used.has(x.id));
+    if (!m) return;
+    SCR.mods.push(m.id);
+    scrModsRender();
+    screenUpdate();
+  };
+}
+
+function scrModMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= SCR.mods.length) return;
+  const t = SCR.mods[i];
+  SCR.mods[i] = SCR.mods[j];
+  SCR.mods[j] = t;
+  scrModsRender();
+  screenUpdate();
+}
+
+async function screenLoad() {
+  const box = $('#scrrows');
+  try {
+    const j = await (await fetch('/api/screen/modules')).json();
+    SCR.budget = j.budget || 0;
+    SCR.avail = j.available || [];
+    SCR.choices = j.quota_choices || [];
+    SCR.periods = j.usage_periods || ['today'];
+    SCR.quotas = Array.isArray(j.quotas) ? j.quotas.filter(q => q && q.provider) : [];
+    SCR.usage = j.usage || 'today';
+    SCR.compact = !!j.compact;
+    SCR.mods = Array.isArray(j.modules) ? j.modules.filter(id => scrMod(id)) : [];
+    const cmp = $('#scrcmp');
+    if (cmp) cmp.checked = SCR.compact;
+    scrModsRender();
+    scrUsageRender();
+    scrQuotaList();
+    screenUpdate();
+  } catch (e) {
+    SCR.bad = true;
+    $('#scrsave').disabled = true;
+    box.innerHTML = `<span class="muted">${NK.t('加载失败')}</span>`;
+  }
+}
+
+function screenUpdate() {
+  const picked = scrPicked();
+  const dup = picked.find((id, i) => picked.indexOf(id) !== i);
+  let used = 0;
+  picked.forEach(id => { used += scrSlotH(id); });
+  const over = used - SCR.budget;
+  SCR.bad = !!dup || over > 0;
+  const pct = SCR.budget ? Math.min(100, Math.round(used * 100 / SCR.budget)) : 0;
+  const fill = $('#scrbfill');
+  if (fill) {
+    fill.style.width = pct + '%';
+    fill.className = over > 0 ? 'over' : (pct >= 85 ? 'warn' : '');
+  }
+  $('#scrsum').textContent = `${NK.t('已用 ')}${used}${NK.t(' / ')}${SCR.budget}${NK.t(' px')}`;
+  const hint = $('#scrhint');
+  hint.textContent = dup ? `${NK.t('有重复模块：')}${NK.t(scrLabel(dup))}`
+    : (over > 0 ? `${NK.t('超出 ')}${over}${NK.t(' px')}` : '');
+  $('#scrsum').style.color = hint.style.color = SCR.bad ? 'var(--error, #e5484d)' : '';
+  $('#scrmsg').textContent = '';
+  $('#scrsave').disabled = SCR.bad;
+  scrPrev();
+}
+
+const scrPeriodLabel = p => ({ today: '近24小时用量', '7d': '近7日用量', '30d': '近30日用量' }[p] || p);
+const scrQKey = c => c.provider + '\u0001' + (c.account || '') + '\u0001' + c.window;
+
+function scrUsageRender() {
+  const sel = $('#scrusage');
+  if (!sel) return;
+  sel.innerHTML = (SCR.periods || []).map(p =>
+    `<option value="${esc(p)}">${esc(NK.t(scrPeriodLabel(p)))}</option>`).join('');
+  sel.value = SCR.usage || 'today';
+  if (!sel.value) { sel.value = 'today'; SCR.usage = 'today'; }
+}
+
+function scrQuotaList() {
+  const box = $('#scrqlist');
+  if (!box) return;
+  if (!(SCR.quotas || []).length) {
+    box.innerHTML = `<div class="muted">${NK.t('空 = 自动：全部配额按剩余升序')}</div>`;
+    return;
+  }
+  box.innerHTML = SCR.quotas.map((q, i) => {
+    const cur = scrQKey(q);
+    const opts = SCR.choices.map(c => {
+      const v = scrQKey(c);
+      return `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(c.label)}</option>`;
+    }).join('');
+    const extra = SCR.choices.some(c => scrQKey(c) === cur) ? '' :
+      `<option value="${esc(cur)}" selected>${esc((q.provider || '?') + ' / ' + (q.window || '—'))}${esc(NK.t('（当前不可用）'))}</option>`;
+    return `<div class="row scrqrow" data-i="${i}">
+        <select class="scrqsel" style="width:250px">${opts}${extra}</select>
+        <button class="act scrqup"${i === 0 ? ' disabled' : ''}>↑</button>
+        <button class="act scrqdn"${i === SCR.quotas.length - 1 ? ' disabled' : ''}>↓</button>
+        <button class="act scrqdel">×</button>
+      </div>`;
+  }).join('');
+  box.querySelectorAll('.scrqrow').forEach(row => {
+    const i = +row.dataset.i;
+    row.querySelector('.scrqsel').onchange = e => {
+      const parts = e.target.value.split('\u0001');
+      SCR.quotas[i] = { provider: parts[0], account: parts[1] || '', window: parts[2] };
+      if (!SCR.quotas[i].account) delete SCR.quotas[i].account;
+      scrQuotaList();
+      scrPrev();
+    };
+    row.querySelector('.scrqup').onclick = () => scrQuotaMove(i, -1);
+    row.querySelector('.scrqdn').onclick = () => scrQuotaMove(i, +1);
+    row.querySelector('.scrqdel').onclick = () => {
+      SCR.quotas.splice(i, 1);
+      scrQuotaList();
+      scrPrev();
+    };
+  });
+}
+
+function scrQuotaMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= SCR.quotas.length) return;
+  const t = SCR.quotas[i];
+  SCR.quotas[i] = SCR.quotas[j];
+  SCR.quotas[j] = t;
+  scrQuotaList();
+  scrPrev();
+}
+
+// 添加配额：**永远追加一行**（条数不设限）。
+// 优先挑一个还没用过的条目；全都用过了就把最后一条复制一份——
+// 用户随后可以用下拉改成任意「供应商 · 账号 · 周期」，也可以故意重复。
+$('#scrqadd').onclick = () => {
+  const choices = SCR.choices || [];
+  if (!choices.length) { $('#scrqmsg').textContent = NK.t('当前没有可用配额（等网关数据）'); return; }
+  const used = new Set((SCR.quotas || []).map(scrQKey));
+  const c = choices.find(x => !used.has(scrQKey(x))) || choices[choices.length - 1];
+  $('#scrqmsg').textContent = '';
+  SCR.quotas.push(c.account ? { provider: c.provider, account: c.account, window: c.window }
+                                : { provider: c.provider, window: c.window });
+  scrQuotaList();
+  scrPrev();
+};
+$('#scrusage').onchange = e => { SCR.usage = e.target.value; scrPrev(); };
+$('#scrcmp').onchange = e => { SCR.compact = !!e.target.checked; screenUpdate(); scrPrev(); };
+
+// ---- 实时预览：POST /api/screen/preview（后端真实渲染器 + 实时数据）→ PNG
+// best-effort：配置不完整也返回图；不保存、不落盘。scale=2 → 480²，按 240 CSS px 显示。
+const SEP = { timer: 0, seq: 0, url: '', ac: null };
+// 预览 body = 当前编辑器状态整份 {modules, quotas, usage}（modules 取 #scrrows 当前选择）
+function scrPrevBody() {
+  return { modules: scrPicked(), quotas: SCR.quotas || [], usage: SCR.usage || 'today',
+           compact: !!SCR.compact, scale: 2 };
+}
+// 任何编辑动作后 debounce ~300ms 再请求
+function scrPrev() {
+  clearTimeout(SEP.timer);
+  SEP.timer = setTimeout(scrPrevNow, 300);
+}
+async function scrPrevNow() {
+  const msg = $('#scrprevmsg');
+  const seq = ++SEP.seq;
+  if (SEP.ac) SEP.ac.abort();
+  const ac = new AbortController();
+  SEP.ac = ac;
+  try {
+    const r = await fetch('/api/screen/preview', { method: 'POST',   // 同源 fetch 自带会话 cookie
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(scrPrevBody()), signal: ac.signal });
+    if (seq !== SEP.seq) return;
+    if (!r.ok || !String(r.headers.get('content-type') || '').startsWith('image/')) {
+      throw new Error(`HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    if (seq !== SEP.seq) return;
+    const img = $('#scrprev'), old = SEP.url;
+    SEP.url = URL.createObjectURL(blob);
+    img.src = SEP.url;
+    if (old) URL.revokeObjectURL(old);                        // 旧图别留着泄漏
+    if (msg) { msg.textContent = ''; msg.style.color = ''; }
+  } catch (e) {
+    if (seq !== SEP.seq || (e && e.name === 'AbortError')) return;
+    if (msg) {
+      msg.textContent = `${NK.t('预览失败：')}${String((e && e.message) || e)}`;
+      msg.style.color = 'var(--error, #e5484d)';
+    }
+  } finally {
+    if (SEP.ac === ac) SEP.ac = null;
+  }
+}
+// 关掉编辑器：撤掉未发的请求、释放 object URL
+function scrPrevClear() {
+  clearTimeout(SEP.timer);
+  SEP.timer = 0;
+  SEP.seq++;
+  if (SEP.ac) { SEP.ac.abort(); SEP.ac = null; }
+  if (SEP.url) { URL.revokeObjectURL(SEP.url); SEP.url = ''; }
+  const img = $('#scrprev');
+  if (img) img.removeAttribute('src');
+  const msg = $('#scrprevmsg');
+  if (msg) { msg.textContent = ''; msg.style.color = ''; }
+}
+
+$('#scrsave').onclick = async () => {
+  const mods = scrPicked();
+  $('#scrsave').disabled = true;
+  try {
+    const r = await fetch('/api/screen/modules', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modules: mods, quotas: SCR.quotas || [], usage: SCR.usage || 'today',
+                             compact: !!SCR.compact }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || NK.t('保存失败'));
+    const msg = $('#scrmsg');
+    msg.textContent = NK.t('已保存');
+    msg.style.color = 'var(--success, #30a46c)';
+    setTimeout(() => { if (msg.textContent === NK.t('已保存')) msg.textContent = ''; }, 2000);
+    $('#scrhint').textContent = '';
+    $('#scrhint').style.color = $('#scrsum').style.color = '';
+    if (Array.isArray(j.quotas)) SCR.quotas = j.quotas;
+    if (j.usage) SCR.usage = j.usage;
+    if (typeof j.compact === 'boolean') SCR.compact = j.compact;
+    const cmp2 = $('#scrcmp');
+    if (cmp2) cmp2.checked = SCR.compact;
+    scrUsageRender();
+    scrQuotaList();
+    SCR.mods = Array.isArray(j.modules) ? j.modules.filter(id => scrMod(id)) : SCR.mods;
+    scrModsRender();
+    SCR.bad = false;
+  } catch (e) {
+    const hint = $('#scrhint');
+    hint.textContent = String(e.message || e);
+    hint.style.color = $('#scrsum').style.color = 'var(--error, #e5484d)';
+  } finally {
+    $('#scrsave').disabled = SCR.bad;
+  }
+};
+
+// ---- USER 按键（管理面 → 系统；GET/POST /api/user-button）
+const BTN = { action: '', saved: '', avail: [] };
+const btnLabel = a => ((a.label && (NK.lang === 'zh' ? a.label.zh : a.label.en)) || a.id || '');
+function btnRender() {
+  const sel = $('#btnact'), save = $('#btnsave');
+  if (!sel) return;
+  sel.innerHTML = BTN.avail.map(a =>
+    `<option value="${esc(a.id)}"${a.id === BTN.action ? ' selected' : ''}>${esc(btnLabel(a))}</option>`).join('');
+  if (save) save.disabled = BTN.action === BTN.saved;
+}
+async function btnLoad() {
+  const msg = $('#btnmsg');
+  try {
+    const j = await (await fetch('/api/user-button')).json();
+    BTN.avail = Array.isArray(j.available) ? j.available : [];
+    BTN.action = j.action || j.default || '';
+    BTN.saved = BTN.action;
+    btnRender();
+    if (msg) {
+      msg.textContent = j.enabled === false ? NK.t('按键未启用（USER_BUTTON_GPIO=-1）') : '';
+      msg.style.color = '';
+    }
+  } catch (e) {
+    const sel = $('#btnact');
+    if (sel) sel.innerHTML = `<option>${esc(NK.t('加载失败'))}</option>`;
+    const save = $('#btnsave');
+    if (save) save.disabled = true;
+    if (msg) { msg.textContent = String((e && e.message) || e); msg.style.color = 'var(--error, #e5484d)'; }
+  }
+}
+$('#btnact').onchange = e => { BTN.action = e.target.value; btnRender(); };
+$('#btnsave').onclick = async () => {
+  const msg = $('#btnmsg'), save = $('#btnsave');
+  if (save) save.disabled = true;
+  try {
+    const r = await fetch('/api/user-button', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: BTN.action }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || NK.t('保存失败'));
+    BTN.saved = j.action || BTN.action;
+    if (msg) {
+      msg.textContent = NK.t('已保存');
+      msg.style.color = 'var(--success, #30a46c)';
+      setTimeout(() => { if (msg.textContent === NK.t('已保存')) msg.textContent = ''; }, 2000);
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = String((e && e.message) || e); msg.style.color = 'var(--error, #e5484d)'; }
+  } finally {
+    btnRender();
+  }
+};
+
+// ---- 看板交互：刷新 / 周期切换 / 快捷页签 / 复制网关地址
+$('#dbrefresh').onclick = () => { status(); stats(); };
+document.querySelectorAll('#dbperiod button').forEach(b => b.onclick = () => {
+  if (!DBP[b.dataset.p]) return;
+  DB.period = b.dataset.p;
+  try { localStorage.setItem('nk_dash_period', DB.period); } catch {}
+  renderDash();
+});
+document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => showTab(b.dataset.goto));
+$('#dbsys').addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  const text = b.dataset.copy;
+  try { await navigator.clipboard.writeText(text); } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    ta.remove();
+  }
+  const old = b.textContent;
+  b.textContent = NK.t('已复制');
+  setTimeout(() => { b.textContent = old; }, 1500);
+});
+
+loadAgents(); renderScope(); renderDash();
+status(); setInterval(status, 10000); stats(); setInterval(stats, 3000); models(); keyring();
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoKeyOut · 登录</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+  .card { width: min(360px, 100%); padding: 30px 28px; border: 1px solid var(--border, #8884);
+          border-radius: 16px; background: var(--surface, #8881); }
+  h1 { font-size: 22px; letter-spacing: -.02em; margin: 0 0 6px;
+       display: flex; align-items: center; gap: 10px; }
+  h1::before { content: ""; width: 10px; height: 10px; border-radius: 50%;
+               background: var(--accent, #06c); box-shadow: 0 0 0 4px var(--surface, #8881); }
+  p.sub { margin: 0 0 22px; color: var(--muted, #888); font-size: 13px; }
+  label { display: block; font-size: 12px; margin: 14px 0 5px; color: var(--muted, #888); }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit;
+          border: 1px solid var(--border, #8886); border-radius: 9px;
+          background: transparent; color: inherit; }
+  input:focus { outline: 2px solid var(--accent, #06c); outline-offset: 1px; border-color: transparent; }
+  button { width: 100%; margin-top: 20px; padding: 11px; font: inherit; cursor: pointer;
+           border: 0; border-radius: 9px; background: var(--accent, #06c); color: #fff; font-weight: 600; }
+  .err { min-height: 18px; margin-top: 10px; font-size: 13px; color: var(--error, #e5484d); }
+  .hint { margin-top: 14px; font-size: 12px; color: var(--muted, #888); }
+  .lang { position: fixed; top: 12px; right: 14px; width: auto; margin: 0; padding: 4px 11px;
+          font-size: 12px; border: 1px solid var(--border, #8886); border-radius: 99px;
+          background: transparent; color: inherit; font-weight: 400; }
+  .lang:hover { background: var(--surface, #8881); }
+</style>
+</head>
+<body>
+<button class="lang" id="nklang">English</button>
+<form class="card" id="f">
+  <h1>NoKeyOut</h1>
+  <p class="sub">登录管理面。真实 API Key 只在本设备内。</p>
+  <label for="u">账号</label>
+  <input id="u" name="user" autocomplete="username" required>
+  <label for="p">口令</label>
+  <input id="p" name="pass" type="password" autocomplete="current-password" required>
+  <div id="chalwrap" hidden>
+    <label for="c">挑战码（见设备屏幕）</label>
+    <input id="c" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8">
+    <p class="hint" id="chalhint">失败次数已达阈值：每次尝试都需要输入当次新的挑战码。</p>
+  </div>
+  <button type="submit">登录</button>
+  <div class="err" id="err"></div>
+  <p class="hint">管理面仅在设备开启模式下可达；失败会渐进限速，超过阈值后每次都需要挑战码。</p>
+</form>
+<script>
+/* 界面语言与设备屏同源：GET/POST /api/lang（server.lang()）。字典按「中文原文」索引。 */
+const NK = { lang: 'zh' };
+NK.I18N = {
+  "NoKeyOut · 管理面登录": "NoKeyOut · Admin sign-in",
+  "NoKeyOut 管理面": "NoKeyOut admin",
+  "登录管理面。真实 API Key 只在本设备内。":
+    "Sign in to the admin console. Real API keys never leave this device.",
+  "管理面仅在设备开启模式下可达；失败会渐进限速，超过阈值后每次都需要挑战码。":
+    "The admin console is reachable only in open mode; failures add progressive delays, and past the threshold every attempt needs a code.",
+  "用设备账号登录。真实 API Key 只在本设备内。":
+    "Sign in with a device account. Real API keys never leave this device.",
+  "账号": "Username", "口令": "Password", "登录": "Sign in",
+  "连续失败 5 次锁定 5 分钟。管理面仅在设备开启模式下可达。":
+    "The admin panel is reachable only in open mode; failures add progressive delays and, past the threshold, a per-attempt code.",
+  "挑战码（见设备屏幕）": "Challenge code (see the device screen)",
+  "失败次数已达阈值：每次尝试都需要输入当次新的挑战码。":
+    "Failure threshold reached: every attempt now needs the code currently shown on the device.",
+  "登录失败 ": "Login failed ",
+  "English": "中文",
+};
+NK.t = s => (NK.lang === 'zh' ? s : (NK.I18N[s] ?? s));
+NK.apply = () => {
+  document.querySelectorAll('[placeholder]').forEach(el => el.placeholder = NK.t(el.placeholder));
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const edits = [];
+  for (let n; (n = walk.nextNode());) {
+    const s = n.textContent, t = s.trim();
+    if (t && NK.I18N[t]) edits.push([n, s, t]);
+  }
+  for (const [n, s, t] of edits) n.textContent = s.replace(t, NK.t(t));
+  document.documentElement.lang = NK.lang === 'zh' ? 'zh-CN' : 'en';
+};
+NK.switchLang = async () => {
+  try { await fetch('/api/lang', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lang: NK.lang === 'zh' ? 'en' : 'zh' }) }); } catch {}
+  location.reload();
+};
+(async () => {
+  try { NK.lang = (await (await fetch('/api/lang')).json()).lang || 'zh'; } catch {}
+  NK.apply();
+  const b = document.getElementById('nklang');
+  if (b) b.textContent = NK.t('English');
+  if (b) b.onclick = NK.switchLang;
+})();
+
+// 记住上次登录名：只存账号，绝不存口令。没有记录时把焦点放回账号。
+const USER_KEY = 'nk_user';
+try {
+  const saved = localStorage.getItem(USER_KEY);
+  if (saved) { u.value = saved; p.focus(); } else { u.focus(); }
+} catch { u.focus(); }
+
+const err = document.getElementById('err');
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault(); err.textContent = '';
+  try { localStorage.setItem(USER_KEY, u.value.trim()); } catch {}
+  const r = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: u.value, pass: p.value, code: c.value }) });
+  if (r.ok) { const j = await r.json().catch(() => ({})); location.href = j.firstboot ? '/firstboot' : '/portal'; return; }
+  let j = {}; try { j = await r.json(); } catch {}
+  err.textContent = j.error || (NK.t('登录失败 ') + r.status);
+  chalwrap.hidden = !j.challenge;
+  if (chalwrap.hidden) { c.value = ''; } else { c.focus(); c.select(); }
+  p.value = ''; p.focus();
+});
+</script>
+</body>
+</html>

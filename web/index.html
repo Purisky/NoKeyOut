@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoKeyOut - a standalone box that holds your API keys</title>
+<meta name="description" content="NoKeyOut is a small ARM64 device on your LAN: provider API keys live on it, a physical switch closes SSH and the panel, and a 240x240 screen reports state locally.">
+<meta property="og:title" content="NoKeyOut - a standalone box that holds your API keys">
+<meta property="og:description" content="Keys on one box, a switch that leaves one LAN port open, a 240x240 screen that tells the truth.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a0c0a">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/icons/nokeyout_16.png">
+<link rel="icon" type="image/png" sizes="20x20" href="assets/icons/nokeyout_20.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/nokeyout_32.png">
+<link rel="icon" type="image/png" sizes="40x40" href="assets/icons/nokeyout_40.png">
+<link rel="icon" type="image/png" sizes="48x48" href="assets/icons/nokeyout_48.png">
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/vt323-latin-400-normal.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/silkscreen-latin-400-normal.woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css?v=20261024-24">
+<link rel="alternate" hreflang="zh-CN" href="/?lang=zh">
+<link rel="alternate" hreflang="en" href="/">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/">
+      <img class="mark" src="assets/icons/nokeyout_16.png" srcset="assets/icons/nokeyout_16.png 1x, assets/icons/nokeyout_20.png 1.25x, assets/icons/nokeyout_32.png 2x, assets/icons/nokeyout_48.png 3x" width="16" height="16" alt="">
+      nokeyout
+    </a>
+    <div class="nav-top">
+      <a class="nav-icon" href="https://github.com/Purisky/NoKeyOut" aria-label="GitHub" title="GitHub">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      </a>
+      <a class="btn nav-cta" href="/diy/">Build one</a>
+      <button class="nav-lang" id="lang-btn" type="button" aria-label="Language">中文</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div class="hero-head">
+      <div class="hero-copy">
+      <div class="eyebrow"><b>open-source standalone key box</b></div>
+      <h1 id="hero-title">A small box that locks API key access with a <span class="k">physical switch</span>.<span class="cursor" aria-hidden="true"></span></h1>
+      <p class="sub">Standalone hardware and a physical switch block accidental or malicious agent access to API keys.</p>
+      </div>
+
+      <aside class="screen-panel">
+        <div class="topo-screen">
+          <div class="screen-inner">
+          <canvas id="hero-screen" width="240" height="240" hidden aria-label="Live 240x240 device screen"></canvas>
+          </div>
+        </div>
+        <p class="screen-hint" hidden>Screen needs http:// — browsers block WebAssembly from file://.</p>
+      </aside>
+    </div>
+
+    <div class="topo" id="lock">
+        <input type="checkbox" id="pswitch" class="pswitch-in" checked aria-label="Physical switch: on is LOCK (normal), off is ADMIN (ports open)">
+
+        <svg viewBox="0 0 720 400" role="group" aria-label="A LAN with device A running codex, device B running opencode, and a browser. Both devices use gateway keys to reach magpie on the box. magpie holds the provider keys and sends requests to the providers listed on the right. The switch in the box header gates :22 and :8443. The live 240x240 screen sits beside the diagram.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--green)"/>
+            </marker>
+            <marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--amber)"/>
+            </marker>
+          </defs>
+
+          <text class="cap" x="20" y="84">lan</text>
+          <rect class="zone" x="8" y="60" width="548" height="296"/>
+          <rect x="202" y="78" width="340" height="272" fill="#000" opacity=".55"/>
+          <rect class="card" x="196" y="72" width="340" height="272"/>
+          <rect class="band" x="196" y="72" width="340" height="64"/>
+          <path class="bandrule" d="M196 136 H536"/>
+          <text class="t" x="212" y="110">nokeyout box</text>
+          <foreignObject x="336" y="76" width="190" height="56">
+            <div xmlns="http://www.w3.org/1999/xhtml" class="box-ctl">
+              <button class="screen-off" id="screen-off" type="button">screen off</button>
+              <label class="pswitch" for="pswitch"><span class="pswitch-track"><span class="pswitch-knob"></span></span></label>
+            </div>
+          </foreignObject>
+
+          <rect class="node" x="16" y="152" width="120" height="48"/>
+          <g class="icon">
+            <rect x="26" y="168" width="10" height="6"/>
+            <rect x="25" y="175" width="12" height="2"/>
+          </g>
+          <text class="t" x="44" y="172">device A</text>
+          <text class="d" x="44" y="189">codex</text>
+
+          <rect class="node" x="16" y="216" width="120" height="48"/>
+          <g class="icon">
+            <rect x="28" y="232" width="9" height="7"/>
+            <rect x="31" y="239" width="2" height="2"/>
+            <rect x="28" y="241" width="8" height="2"/>
+          </g>
+          <text class="t" x="44" y="236">device B</text>
+          <text class="d" x="44" y="253">opencode</text>
+
+          <rect class="node" x="16" y="280" width="120" height="48"/>
+          <g class="icon">
+            <rect x="27" y="296" width="11" height="9"/>
+            <rect class="icon-a" x="27" y="296" width="11" height="3"/>
+          </g>
+          <text class="t" x="44" y="300">browser</text>
+          <text class="d" x="44" y="317">panel login</text>
+
+          <path class="link" d="M136 176 H208"/>
+          <text class="cap" x="172" y="164" text-anchor="middle">gateway key</text>
+          <path class="link" d="M136 240 H176 V176"/>
+          <rect x="174" y="174" width="4" height="4" fill="var(--green)"/>
+
+          <path class="edge-admin" d="M176 240 H208"/>
+          <path class="edge-admin" d="M136 304 H208"/>
+          <rect x="174" y="238" width="4" height="4" fill="var(--green)"/>
+          <g class="cut"><rect x="204" y="232" width="16" height="16" fill="var(--panel)"/><path d="M206 234 L218 246"/><path d="M218 234 L206 246"/></g>
+          <g class="cut"><rect x="204" y="296" width="16" height="16" fill="var(--panel)"/><path d="M206 298 L218 310"/><path d="M218 298 L206 310"/></g>
+
+          <rect class="port-node" x="212" y="152" width="308" height="48"/>
+          <text class="port" x="226" y="170">:3425</text>
+          <text class="d" x="288" y="170">magpie</text>
+          <text class="d" x="288" y="190">provider keys</text>
+
+          <rect class="gated-chip" x="212" y="216" width="308" height="48"/>
+          <text class="port" x="226" y="246">:22</text>
+          <text class="d" x="288" y="246">ssh</text>
+          <text class="d gated top-locked" x="504" y="246" text-anchor="end">closed</text>
+          <text class="d gated top-admin" x="504" y="246" text-anchor="end">open</text>
+
+          <rect class="gated-chip" x="212" y="280" width="308" height="48"/>
+          <text class="port" x="226" y="310">:8443</text>
+          <text class="d" x="288" y="310">panel</text>
+          <text class="d gated top-locked" x="504" y="310" text-anchor="end">closed</text>
+          <text class="d gated top-admin" x="504" y="310" text-anchor="end">open</text>
+
+          <text class="cap" x="586" y="88">providers</text>
+          <path class="edge" d="M520 176 H580"/>
+
+          <g class="prov" data-prov="deepseek" role="button" tabindex="0" aria-pressed="true">
+            <rect x="586" y="100" width="118" height="48"/>
+            <g class="picon" fill-rule="evenodd">
+              <path transform="translate(593 117) scale(0.5833)" d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"/>
+            </g>
+            <text class="d" x="612" y="130">deepseek</text>
+          </g>
+          <g class="prov" data-prov="openai" role="button" tabindex="0" aria-pressed="false">
+            <rect x="586" y="156" width="118" height="48"/>
+            <g class="picon" fill-rule="evenodd">
+              <path transform="translate(593 173) scale(0.5833)" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/>
+            </g>
+            <text class="d" x="612" y="186">openai</text>
+          </g>
+          <g class="prov" data-prov="anthropic" role="button" tabindex="0" aria-pressed="false">
+            <rect x="586" y="212" width="118" height="48"/>
+            <g class="picon" fill-rule="evenodd">
+              <path transform="translate(593 229) scale(0.5833)" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/>
+            </g>
+            <text class="d" x="612" y="242">anthropic</text>
+          </g>
+          <g class="prov" data-prov="opencode" role="button" tabindex="0" aria-pressed="false">
+            <rect x="586" y="268" width="118" height="48"/>
+            <g class="picon" fill-rule="evenodd">
+              <path transform="translate(593 285) scale(0.5833)" d="M22 24H2V0h20zM17 4.8H7v14.4h10z"/>
+            </g>
+            <text class="d" x="612" y="298">opencode</text>
+          </g>
+        </svg>
+      </div>
+
+    </div>
+  </div>
+
+  <section id="keys">
+    <div class="wrap">
+      <div class="sec-head"><span class="num">01</span><h2>Three things the box does</h2></div>
+
+      <dl class="feat">
+        <div><dt>Keys on the box</dt><dd>Provider keys live only on the device. Clients get gateway keys, revocable per machine.</dd></div>
+        <div><dt>Physical lock</dt><dd>The switch closes SSH and the panel.</dd></div>
+        <div><dt>Local screen</dt><dd>240x240: IP, lock state, usage, quota.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <section id="install">
+    <div class="wrap">
+      <div class="sec-head"><span class="num">02</span><h2>Install</h2></div>
+      <p class="sec-sub">Reference build: NanoPi NEO3 Plus. Any 256 MB ARM64 board runs it headless.</p>
+
+      <div class="parts-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Qty</th><th>Spec</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td>NanoPi NEO3 Plus</td><td>1</td><td>RK3528A · 1GB · GbE · eMMC/microSD · 26-pin header</td><td>¥179 / $26.85</td></tr>
+          <tr><td>Slide switch</td><td>1</td><td>2-position latching</td><td>¥0.80 / $0.12</td></tr>
+          <tr><td>Jumper wires</td><td>10</td><td>female-female</td><td>¥1.05 / $0.16</td></tr>
+          <tr><td>ST7789 display</td><td>1</td><td>1.3 or 1.54 in · 240x240 · SPI · header pre-soldered</td><td>¥24.70 / $3.71</td></tr>
+          <tr><td>USB-C power</td><td>1</td><td>5V / 3A or more</td><td>¥32.80 / $4.92</td></tr>
+          <tr><td>TF card</td><td>1</td><td>≥16GB · Class 10 or faster</td><td>¥86.90 / $13.04</td></tr>
+          <tr><td>USB card reader</td><td>1</td><td>USB-A or USB-C</td><td>—</td></tr>
+          <tr><td>Ethernet cable</td><td>1</td><td>100M or faster (Cat5 or better)</td><td>—</td></tr>
+          <tr class="total"><td>Total</td><td></td><td>priced parts only</td><td>¥325.25 / $48.80</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="parts-note">Reference prices, ¥1 = $0.15.</p>
+
+      <div class="cta">
+        <a class="btn p" href="/diy/">Build one</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="legal">Gateway engine: <a href="https://github.com/yetone/magpie">yetone/magpie</a> (MIT).</div>
+  </div>
+</footer>
+
+<script src="assets/screen/wasm_exec.js?v=7"></script>
+<script src="assets/screen/wasm.js?v=12"></script>
+<script src="assets/screen/demo-states.js?v=11"></script>
+<script src="assets/screen/crt.js?v=1"></script>
+<script src="assets/i18n.js?v=1"></script>
+<script src="assets/screen-demo.js?v=19"></script>
+<script src="assets/pixel-snap.js?v=1"></script>
+</body>
+</html>
