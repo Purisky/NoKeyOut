@@ -29,6 +29,12 @@ for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-t
   cp "$ROOT/tools/$f" "$OUT/tools/$f"
 done
 
+REL_DIR="${NOKEYOUT_RELEASES_DIR:-$ROOT/releases}"
+if [ -d "$REL_DIR" ]; then
+  cp -R "$REL_DIR" "$OUT/releases"
+fi
+[ -f "$ROOT/device/update/release.pub" ] && cp "$ROOT/device/update/release.pub" "$OUT/release.pub"
+
 # 开发/源文件，不进 Pages
 rm -rf "$OUT/diy/test" "$OUT/diy/levels/level-2-gating.js" "$OUT/diy/levels/level-3-spi.js" "$OUT/diy/levels/level-4-screen.js"
 rm -f  "$OUT/diy"/*.md

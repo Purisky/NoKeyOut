@@ -36,9 +36,9 @@ const I18N = {
     'tf.skip': '跳过烧录', 'tf.copy': '复制命令', 'tf.copied': '[OK] 已复制', 'tf.copyFail': '复制失败，请手动选择命令',
     'tf.skipToast': '已跳过烧录，直接点卡槽插卡',
     'tf.boardNote': '烧录脚本基于 NanoPi NEO3 Plus 编写；其他主板请直接点击“跳过烧录”。',
-    'tf.termDone': '写卡完成：点 × 关闭，再点卡槽插卡；首次启动需联网安装 NoKeyOut。',
-    'tf.cmdHint': '命令已带 --board neo3plus；选盘、输入 YES、输两次密码。首次启动需联网安装 NoKeyOut。',
-    'tf.windows': 'Windows：以管理员运行 install-tf.ps1 -Board neo3plus。',
+    'tf.termDone': '写卡完成：点 × 关闭，再点卡槽插卡；首次启动用卡内离线包安装。',
+    'tf.cmdHint': '命令已带 --board neo3plus；选盘、输入 YES、输两次密码。首次启动离线安装卡内版本。',
+    'tf.windows': 'Windows：以管理员运行 install-tf.ps1 -Board neo3plus（需要 WSL2）。',
     'tf.param.fetch': '用 curl 取 install-tf.sh 到 /tmp',
     'tf.param.board': 'neo3plus：按板型解析 Armbian 镜像',
     'tf.param.resolve': '只解析镜像，不写卡',
@@ -94,9 +94,9 @@ const I18N = {
     'tf.skip': 'Skip flashing', 'tf.copy': 'Copy command', 'tf.copied': '[OK] Copied', 'tf.copyFail': 'Copy failed — select the command manually',
     'tf.skipToast': 'Flashing skipped; click the slot to insert the card',
     'tf.boardNote': 'The flashing script is written for the NanoPi NEO3 Plus. For other boards, click “Skip flashing”.',
-    'tf.termDone': 'Flash complete: click × to close, then insert the card; first boot needs internet to install NoKeyOut.',
-    'tf.cmdHint': 'The command uses --board neo3plus; select the disk, type YES, enter the password twice. First boot needs internet to install NoKeyOut.',
-    'tf.windows': 'Windows: run install-tf.ps1 -Board neo3plus as Administrator.',
+    'tf.termDone': 'Flash complete: click × to close, then insert the card; first boot installs the bundled release offline.',
+    'tf.cmdHint': 'The command uses --board neo3plus; select the disk, type YES, enter the password twice. First boot installs the bundled release offline.',
+    'tf.windows': 'Windows: run install-tf.ps1 -Board neo3plus as Administrator (WSL2 required).',
     'tf.param.fetch': 'Fetch install-tf.sh to /tmp with curl',
     'tf.param.board': 'neo3plus: resolves the Armbian image',
     'tf.param.resolve': 'Resolve the image only; do not write',
@@ -1157,7 +1157,7 @@ function runFakeFlash() {
     termLine('==> SSH:  enabled (PasswordAuthentication yes)', 'dim');
     termLine('==> First boot: nokeyout-firstboot.service', 'dim');
     termLine('==> Eject the card, insert it into the board, power on, then: ssh nokeyout@<device-ip>', 'dim');
-    termLine('Done. On first boot, firstboot installs NoKeyOut automatically.', 'ok');
+    termLine('Done. First boot installs the bundled release offline; update from the panel.', 'ok');
 
     S.tf.flashed = true;
     sfx('step');
