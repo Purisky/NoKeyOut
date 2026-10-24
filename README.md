@@ -68,7 +68,7 @@ The release is downloaded at flash time, not on first boot. With WSL2 available,
 curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
 ```
 
-Downloads are cached and resumable. Linux uses `~/.cache/nokeyout-images` and `~/.cache/nokeyout-releases` (override with `NOKEYOUT_CACHE`); Windows uses `%LOCALAPPDATA%\nokeyout\cache`. Existing files are reused only after SHA-256 verification; an interrupted `.part` resumes with `curl -C -` / `wget -c`. Delete the cache directory to force a fresh download.
+Downloads are cached and resumable. Linux uses `~/.cache/nokeyout-images` and `~/.cache/nokeyout-releases` (override with `NOKEYOUT_CACHE`); Windows uses `%LOCALAPPDATA%\nokeyout\cache`. Set `NOKEYOUT_CACHE` to override the cache root on either platform. Existing files are reused only after SHA-256 verification; an interrupted `.part` resumes with `curl -C -` / `wget -c`. Delete the cache directory to force a fresh download.
 
 ## Repository
 

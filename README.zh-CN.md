@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\install-tf.ps1 -Board neo3plus
 curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
 ```
 
-下载会缓存并支持续传。Linux 使用 `~/.cache/nokeyout-images` 与 `~/.cache/nokeyout-releases`（可用 `NOKEYOUT_CACHE` 覆盖）；Windows 使用 `%LOCALAPPDATA%\nokeyout\cache`。已有文件只有通过 SHA-256 校验才会复用；中断的 `.part` 会用 `curl -C -` / `wget -c` 续传。删除缓存目录即可强制重新下载。
+下载会缓存并支持续传。Linux 使用 `~/.cache/nokeyout-images` 与 `~/.cache/nokeyout-releases`（可用 `NOKEYOUT_CACHE` 覆盖）；Windows 使用 `%LOCALAPPDATA%\nokeyout\cache`。两个平台都可用 `NOKEYOUT_CACHE` 覆盖缓存根目录。已有文件只有通过 SHA-256 校验才会复用；中断的 `.part` 会用 `curl -C -` / `wget -c` 续传。删除缓存目录即可强制重新下载。
 
 ## 仓库
 

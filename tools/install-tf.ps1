@@ -176,7 +176,7 @@ function Find-Python {
 }
 
 function Get-CachedFile([string]$Url, [string]$Sha, [string]$Name) {
-  $dir = Join-Path $env:LOCALAPPDATA 'nokeyout\cache'
+  $dir = if ($env:NOKEYOUT_CACHE) { $env:NOKEYOUT_CACHE } else { Join-Path $env:LOCALAPPDATA 'nokeyout\cache' }
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
   $dst = Join-Path $dir $Name
   if (Test-Path -LiteralPath $dst) {
