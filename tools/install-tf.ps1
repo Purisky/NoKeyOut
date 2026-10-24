@@ -472,16 +472,17 @@ function Select-TargetDisk {
   return $disk
 }
 
-function Write-RawImage([string]$Img, $Disk) {
+function Write-RawImage([string]$Img, $Disk, [switch]$Confirmed) {
   $size = (Get-Item -LiteralPath $Img).Length
   if ($size -gt $Disk.Size) { Fail ("image is larger than the target disk ({0:N0} > {1:N0} bytes)" -f $size, $Disk.Size) }
 
-  Write-Host ("Image  : {0} ({1:N0} bytes)" -f $Img, $size)
-  Write-Host ("Target : Disk {0}  {1}  {2} GB  Bus={3}" -f $Disk.Number, $Disk.FriendlyName, [math]::Round($Disk.Size / 1GB, 2), $Disk.BusType)
-
-  if (-not $Force) {
-    $answer = Read-Host 'This will OVERWRITE the disk. Type YES to continue'
-    if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return $false }
+  if (-not $Confirmed) {
+    Write-Host ("Image  : {0} ({1:N0} bytes)" -f $Img, $size)
+    Write-Host ("Target : Disk {0}  {1}  {2} GB  Bus={3}" -f $Disk.Number, $Disk.FriendlyName, [math]::Round($Disk.Size / 1GB, 2), $Disk.BusType)
+    if (-not $Force) {
+      $answer = Read-Host 'This will OVERWRITE the disk. Type YES to continue'
+      if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return $false }
+    }
   }
 
   try { Set-Disk -Number $Disk.Number -IsReadOnly $false -ErrorAction SilentlyContinue } catch { }
@@ -569,6 +570,28 @@ try {
   }
 
   $img = Expand-ImageArchive $source $tmp $SevenZip
+  if ($PrepareOnly) {
+    $bundle = $null
+    if (-not $NoDeploy) {
+      if (-not (Find-WslDistro $WslDistro)) {
+        Fail 'WSL2 is required for offline first boot; use -NoDeploy to write the Armbian image only'
+      }
+      $bundle = New-OfflineBundle $tmp
+    }
+    $null = Set-ImageFirstboot $img $tmp $bundle
+    Write-Host "Prepared: $img"
+    return
+  }
+
+  $disk = Select-TargetDisk
+  $size = (Get-Item -LiteralPath $img).Length
+  Write-Host ("Image  : {0} ({1:N0} bytes)" -f $img, $size)
+  Write-Host ("Target : Disk {0}  {1}  {2} GB  Bus={3}" -f $disk.Number, $disk.FriendlyName, [math]::Round($disk.Size / 1GB, 2), $disk.BusType)
+  if (-not $Force) {
+    $answer = Read-Host 'This will OVERWRITE the disk. Type YES to continue'
+    if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return }
+  }
+
   $bundle = $null
   if (-not $NoDeploy) {
     if (-not (Find-WslDistro $WslDistro)) {
@@ -577,12 +600,7 @@ try {
     $bundle = New-OfflineBundle $tmp
   }
   $deployed = Set-ImageFirstboot $img $tmp $bundle
-  if ($PrepareOnly) {
-    Write-Host "Prepared: $img"
-    return
-  }
-  $disk = Select-TargetDisk
-  $ok = Write-RawImage $img $disk
+  $ok = Write-RawImage $img $disk -Confirmed
   if (-not $ok) { return }
 
   Write-Host ''
