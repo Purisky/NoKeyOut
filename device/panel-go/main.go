@@ -472,6 +472,10 @@ func mainCLI() {
 	if len(os.Args) > 1 && os.Args[1] == "screen-gate" {
 		os.Exit(cmdScreenGate(os.Args[2:]))
 	}
+	// 安装阶段接管小屏：画一行标题/副标题/进度，然后退出（不启动服务）
+	if len(os.Args) > 1 && os.Args[1] == "screen-msg" {
+		os.Exit(cmdScreenMsg(os.Args[2:]))
+	}
 
 	p := newPanel()
 	panelInstance = p // screen_ctl 用（screensDir 等进程级查询）

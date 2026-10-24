@@ -56,7 +56,7 @@ cp device/panel-go/panel "$D/panel-go/" 2>/dev/null || {
 cp device/update/nokeyout-update "$D/update/" 2>/dev/null || \
   echo "  ⚠️ 包内无 update/nokeyout-update（发布前先跑 device/update/build.sh）"
 [ -f device/update/release.pub ] && cp device/update/release.pub "$D/update/"
-cp device/scripts/measure-baseline.sh device/scripts/verify-magpie.sh "$D/scripts/"
+cp device/scripts/verify-magpie.sh "$D/scripts/"
 # Windows 工作区可能把 .sh 写成 CRLF；tarball 里的 shell 必须是 LF，
 # 否则设备上 bash 会把 `pipefail\r` 当成无效选项（setup.sh 直接失败）。
 for f in "$D"/panel/*.sh "$D"/gateway/*.sh "$D"/gateway/nokeyout-upgrade \

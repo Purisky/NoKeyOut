@@ -18,8 +18,10 @@ PORT="8443"
 DRY=0
 SKIP_MAGPIE=0
 MAGPIE_VERSION="${NOKEYOUT_MAGPIE_VERSION:-0.1.1322}"
+SCREEN_MSG="${NOKEYOUT_SCREEN_MSG:-}"
 TMP=""
-die() { echo "install-nokeyout: $*" >&2; exit 1; }
+screen_msg() { [ -n "$SCREEN_MSG" ] && [ -x "$SCREEN_MSG" ] && "$SCREEN_MSG" screen-msg "$@" >/dev/null 2>&1 || true; }
+die() { screen_msg "Install failed" "Check console" 0; echo "install-nokeyout: $*" >&2; exit 1; }
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 usage() { cat <<'EOF'
 Usage: sudo bash install-nokeyout.sh [options]
@@ -65,6 +67,7 @@ case "$ARCH" in
 esac
 
 if [ -z "$URL" ]; then
+  screen_msg "Installing NoKeyOut" "Verifying release" 5
   say "0/4 检查互联网"
   curl -fsS --max-time 8 -o /dev/null https://nokeyout.com/release.pub || \
     die "无法访问 nokeyout.com：检查网线/Wi-Fi、DNS、系统时间（NTP）后重试"
@@ -85,6 +88,7 @@ if [ -z "$URL" ]; then
   [ -n "$SHA" ] || die "manifest asset has no sha256"
 fi
 
+screen_msg "Installing NoKeyOut" "Downloading release" 15
 say "2/4 下载 NoKeyOut $VERSION"
 TAR="$TMP/$(basename "${URL%%\?*}")"
 curl -fL --retry 3 --retry-delay 2 -o "$TAR.part" "$URL" || die "download failed"
@@ -99,6 +103,8 @@ mkdir -p "$TMP/rel"
 tar xzf "$TAR" -C "$TMP/rel"
 DIR="$(find "$TMP/rel" -mindepth 1 -maxdepth 1 -type d | head -1)"
 [ -n "$DIR" ] && [ -f "$DIR/panel/setup.sh" ] || die "release layout invalid (panel/setup.sh missing)"
+if [ -z "$SCREEN_MSG" ] && [ -x "$DIR/panel-go/panel" ]; then SCREEN_MSG="$DIR/panel-go/panel"; fi
+screen_msg "Installing NoKeyOut" "Release verified" 25
 
 if [ -z "$IP" ]; then
   IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -106,6 +112,7 @@ fi
 [ -n "$IP" ] || die "cannot detect IP; pass --ip <device-ip>"
 
 if [ "$SKIP_MAGPIE" != 1 ] && ! systemctl is-active --quiet nokeyout-magpie-binary 2>/dev/null; then
+  screen_msg "Installing NoKeyOut" "Installing gateway" 45
   say "3b/4 安装 magpie 二进制（OCI 直取）"
   PULLER="$DIR/tools/magpie-pull/magpie-pull"
   [ -x "$PULLER" ] || die "release 缺 tools/magpie-pull/magpie-pull；无法安装 magpie"
@@ -156,11 +163,13 @@ EOS
   fi
 fi
 
+screen_msg "Installing NoKeyOut" "Configuring panel" 70
 say "4/4 安装 NoKeyOut（panel :$PORT，二进制 magpie）"
 ARGS=(--ip "$IP" --port "$PORT")
 [ "$DRY" = 1 ] && ARGS+=(--dry-run)
 ( cd "$DIR" && bash panel/setup.sh "${ARGS[@]}" )
 
+screen_msg "Install complete" "Open :$PORT" 100
 say "完成"
 echo "  管理面: https://$IP:$PORT/"
 echo "  屏幕门控: panel-go screen-gate status|pass"
