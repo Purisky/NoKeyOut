@@ -30,8 +30,10 @@ for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-t
 done
 
 REL_DIR="${NOKEYOUT_RELEASES_DIR:-$ROOT/releases}"
-if [ -d "$REL_DIR" ]; then
-  cp -R "$REL_DIR" "$OUT/releases"
+if [ -d "$REL_DIR/stable" ]; then
+  mkdir -p "$OUT/releases/stable"
+  cp "$REL_DIR/stable/"*.json "$OUT/releases/stable/" 2>/dev/null || true
+  cp "$REL_DIR/stable/"*.sig  "$OUT/releases/stable/" 2>/dev/null || true
 fi
 [ -f "$ROOT/device/update/release.pub" ] && cp "$ROOT/device/update/release.pub" "$OUT/release.pub"
 
