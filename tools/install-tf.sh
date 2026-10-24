@@ -31,6 +31,12 @@ Usage: sudo bash tools/install-tf.sh --board NAME [options]
 EOF
 }
 
+case "${LC_ALL:-${LANG:-}}" in
+  zh*) LANG_CODE=zh ;;
+  *) LANG_CODE=en ;;
+esac
+[ "${NOKEYOUT_LANG:-}" = "zh" ] && LANG_CODE=zh
+
 while [ $# -gt 0 ]; do case "$1" in
   --board) BOARD="${2:-}"; shift 2 ;;
   --image-url) IMAGE_URL="${2:-}"; shift 2 ;;
@@ -179,7 +185,7 @@ else
 fi
 
 say "3/3 写卡"
-ARGS=(--board "$BOARD" --image-url "$IMAGE_URL")
+ARGS=(--board "$BOARD" --image-url "$IMAGE_URL" --lang "$LANG_CODE")
 [ -n "$SHA" ] && ARGS+=(--sha256 "$SHA")
 [ -n "$FB" ] && ARGS+=(--firstboot "$FB")
 [ -n "$BUNDLE" ] && ARGS+=(--bundle "$BUNDLE")
