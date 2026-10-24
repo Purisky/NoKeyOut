@@ -192,7 +192,6 @@ cleanup() {
   fi
   [ -n "$MNT" ] && rmdir "$MNT" 2>/dev/null || true
   [ -n "$WORK" ] && rm -rf "$WORK" 2>/dev/null || true
-  if [ -n "$TMP_IMG" ] && [ "$TMP_IMG" != "$IMAGE" ]; then rm -f "$TMP_IMG" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
 
@@ -200,12 +199,33 @@ if [ "$CONFIGURE_ONLY" -eq 0 ]; then
   if [ -n "$IMAGE_URL" ]; then
     mkdir -p "$CACHE_DIR"
     IMAGE="$CACHE_DIR/$(basename "${IMAGE_URL%%\?*}")"
-    if [ ! -s "$IMAGE" ]; then
-      say "Downloading $IMAGE_URL"
+    cache_ok=0
+    if [ -s "$IMAGE" ]; then
+      if [ -n "$IMAGE_SHA256" ]; then
+        got="$(sha256sum "$IMAGE" | awk '{print $1}')"
+        if [ "$got" = "$IMAGE_SHA256" ]; then
+          cache_ok=1
+        else
+          say "Cached image checksum mismatch; downloading again"
+          rm -f "$IMAGE"
+        fi
+      else
+        cache_ok=1
+      fi
+    fi
+    if [ "$cache_ok" = 1 ]; then
+      say "Using cached $IMAGE"
+    else
+      say "Downloading $IMAGE_URL (resume if a .part exists)"
       if command -v curl >/dev/null 2>&1; then
-        curl -fL --retry 3 --retry-delay 2 -o "$IMAGE.part" "$IMAGE_URL"
+        if [ -s "$IMAGE.part" ]; then
+          curl -fL --retry 3 --retry-delay 2 -C - -o "$IMAGE.part" "$IMAGE_URL" || \
+            curl -fL --retry 3 --retry-delay 2 -o "$IMAGE.part" "$IMAGE_URL" || die "download failed"
+        else
+          curl -fL --retry 3 --retry-delay 2 -o "$IMAGE.part" "$IMAGE_URL" || die "download failed"
+        fi
       elif command -v wget >/dev/null 2>&1; then
-        wget -O "$IMAGE.part" "$IMAGE_URL"
+        wget -c -O "$IMAGE.part" "$IMAGE_URL" || die "download failed"
       else
         die "need curl or wget"
       fi
@@ -215,22 +235,33 @@ if [ "$CONFIGURE_ONLY" -eq 0 ]; then
   [ -f "$IMAGE" ] || die "image not found: $IMAGE"
   if [ -n "$IMAGE_SHA256" ]; then
     got="$(sha256sum "$IMAGE" | awk '{print $1}')"
-    [ "$got" = "$IMAGE_SHA256" ] || die "sha256 mismatch: got $got"
+    if [ "$got" != "$IMAGE_SHA256" ]; then
+      rm -f "$IMAGE" "$IMAGE.part"
+      die "sha256 mismatch: got $got"
+    fi
   fi
 
   case "$IMAGE" in
     *.gz)
       command -v gzip >/dev/null 2>&1 || die "missing tool: gzip"
-      TMP_IMG="$CACHE_DIR/$(basename "${IMAGE%.gz}").raw"; say "Decompressing gzip"; gzip -dc "$IMAGE" > "$TMP_IMG"
+      TMP_IMG="$CACHE_DIR/$(basename "${IMAGE%.gz}").raw"
+      if [ -s "$TMP_IMG" ]; then say "Using cached $TMP_IMG"; else
+        say "Decompressing gzip"; gzip -dc "$IMAGE" > "$TMP_IMG.part" && mv "$TMP_IMG.part" "$TMP_IMG"
+      fi
       ;;
     *.xz)
       command -v xz >/dev/null 2>&1 || die "missing tool: xz"
-      TMP_IMG="$CACHE_DIR/$(basename "${IMAGE%.xz}").raw"; say "Decompressing xz"; xz -dc "$IMAGE" > "$TMP_IMG"
+      TMP_IMG="$CACHE_DIR/$(basename "${IMAGE%.xz}").raw"
+      if [ -s "$TMP_IMG" ]; then say "Using cached $TMP_IMG"; else
+        say "Decompressing xz"; xz -dc "$IMAGE" > "$TMP_IMG.part" && mv "$TMP_IMG.part" "$TMP_IMG"
+      fi
       ;;
     *.zip)
       command -v unzip >/dev/null 2>&1 || die "missing tool: unzip"
-      TMP_IMG="$CACHE_DIR/nokeyout-image.raw"; say "Extracting zip";
-      unzip -p "$IMAGE" '*.img' > "$TMP_IMG" || die "no .img in zip"
+      TMP_IMG="$CACHE_DIR/nokeyout-image.raw"
+      if [ -s "$TMP_IMG" ]; then say "Using cached $TMP_IMG"; else
+        say "Extracting zip"; unzip -p "$IMAGE" '*.img' > "$TMP_IMG.part" && mv "$TMP_IMG.part" "$TMP_IMG" || die "no .img in zip"
+      fi
       ;;
     *) TMP_IMG="$IMAGE" ;;
   esac

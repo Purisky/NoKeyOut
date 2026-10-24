@@ -175,6 +175,52 @@ function Find-Python {
   return $null
 }
 
+function Get-CachedFile([string]$Url, [string]$Sha, [string]$Name) {
+  $dir = Join-Path $env:LOCALAPPDATA 'nokeyout\cache'
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  $dst = Join-Path $dir $Name
+  if (Test-Path -LiteralPath $dst) {
+    if (-not $Sha) {
+      Say "Using cached $Name (no checksum available)"
+      return $dst
+    }
+    $got = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($got -eq $Sha.ToLowerInvariant()) {
+      Say "Using cached $Name"
+      return $dst
+    }
+    Say "Cached $Name checksum mismatch; downloading again"
+    Remove-Item -LiteralPath $dst -Force
+  }
+
+  $part = $dst + '.part'
+  $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+  Say "Downloading $Name (resume if a .part exists)"
+  if (Test-Path -LiteralPath $curl) {
+    if (Test-Path -LiteralPath $part) {
+      & $curl -fL --retry 3 --retry-delay 3 -C - -o $part $Url
+      if ($LASTEXITCODE -ne 0) {
+        & $curl -fL --retry 3 --retry-delay 3 -o $part $Url
+        if ($LASTEXITCODE -ne 0) { Fail "download failed: $Name" }
+      }
+    } else {
+      & $curl -fL --retry 3 --retry-delay 3 -o $part $Url
+      if ($LASTEXITCODE -ne 0) { Fail "download failed: $Name" }
+    }
+  } else {
+    Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $part
+  }
+  if ($Sha) {
+    $got = (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($got -ne $Sha.ToLowerInvariant()) {
+      Remove-Item -LiteralPath $part -Force
+      Fail "SHA-256 mismatch: $Name"
+    }
+  }
+  Move-Item -LiteralPath $part -Destination $dst -Force
+  return $dst
+}
+
 function Find-WslDistro([string]$Preferred) {
   $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
   if (-not (Test-Path -LiteralPath $wsl)) { return $null }
@@ -231,16 +277,11 @@ function New-OfflineBundle([string]$Tmp) {
   $asset = $m.assets.'linux-arm64'
   if (-not $asset -or -not $asset.url -or -not $asset.sha256) { Fail 'manifest has no linux-arm64 asset' }
   Say ("Downloading NoKeyOut {0}" -f $m.version)
+  $tarName = Split-Path -Leaf ([uri]$asset.url).AbsolutePath
+  if (-not $tarName) { $tarName = 'nokeyout-release.tar.gz' }
+  $cached = Get-CachedFile $asset.url ([string]$asset.sha256) $tarName
   $tar = Join-Path $bundle 'release.tar.gz'
-  $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-  if (Test-Path -LiteralPath $curl) {
-    & $curl -fL --retry 3 --retry-delay 3 -o $tar $asset.url
-    if ($LASTEXITCODE -ne 0) { Fail "release download failed: $LASTEXITCODE" }
-  } else {
-    Invoke-WebRequest -UseBasicParsing -Uri $asset.url -OutFile $tar
-  }
-  $got = (Get-FileHash -LiteralPath $tar -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($got -ne ([string]$asset.sha256).ToLowerInvariant()) { Fail "release SHA-256 mismatch (got $got)" }
+  Copy-Item -LiteralPath $cached -Destination $tar -Force
 
   $ex = Join-Path $bundle 'extract'
   New-Item -ItemType Directory -Path $ex -Force | Out-Null
@@ -495,23 +536,7 @@ try {
     if ($ResolveOnly) { return }
 
     $fileName = Split-Path -Leaf ([uri]$resolved.Url).AbsolutePath
-    $source = Join-Path $tmp $fileName
-    $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-    Say "Downloading $fileName"
-    if (Test-Path -LiteralPath $curl) {
-      & $curl -fL --retry 3 --retry-delay 3 -o $source $resolved.Url
-      if ($LASTEXITCODE -ne 0) { Fail "download failed with exit code $LASTEXITCODE" }
-    } else {
-      Invoke-WebRequest -UseBasicParsing -Uri $resolved.Url -OutFile $source
-    }
-
-    if ($resolved.Sha256) {
-      Say 'Verifying SHA-256'
-      $got = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($got -ne $resolved.Sha256.ToLowerInvariant()) {
-        Fail "SHA-256 mismatch (got $got)"
-      }
-    }
+    $source = Get-CachedFile $resolved.Url ([string]$resolved.Sha256) $fileName
   }
 
   if ($ResolveOnly) { return }

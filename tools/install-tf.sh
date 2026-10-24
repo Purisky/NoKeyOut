@@ -15,6 +15,7 @@ DEPLOY=1
 RESOLVE_ONLY=0
 INDEX="https://github.armbian.com/armbian-images.json"
 TOOLS_BASE="${NOKEYOUT_TOOLS_BASE:-https://nokeyout.com/tools}"
+CACHE_BASE="${NOKEYOUT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}}"
 RELEASE_MANIFEST="${NOKEYOUT_RELEASE_URL:-https://nokeyout.com/releases/stable/manifest.json}"
 RELEASE_PUBKEY="${NOKEYOUT_PUBKEY_URL:-https://nokeyout.com/release.pub}"
 die() { echo "install-tf: $*" >&2; exit 1; }
@@ -140,9 +141,27 @@ PY
 )"
   [ -n "$RURL" ] && [ -n "$RSHA" ] || die "manifest has no linux-arm64 asset"
   say "  release: $RVER (magpie $RMAGPIE)"
-  curl -fL --retry 3 --retry-delay 3 -o "$BUNDLE/release.tar.gz.part" "$RURL" || die "cannot download release"
-  mv "$BUNDLE/release.tar.gz.part" "$BUNDLE/release.tar.gz"
-  echo "$RSHA  $BUNDLE/release.tar.gz" | sha256sum -c - >/dev/null || die "release sha256 mismatch"
+  REL_CACHE="$CACHE_BASE/nokeyout-releases"
+  mkdir -p "$REL_CACHE"
+  CACHED="$REL_CACHE/$(basename "${RURL%%\?*}")"
+  if [ -s "$CACHED" ] && echo "$RSHA  $CACHED" | sha256sum -c - >/dev/null 2>&1; then
+    say "  using cached $(basename "$CACHED")"
+  else
+    [ -s "$CACHED" ] && rm -f "$CACHED"
+    if [ -s "$CACHED.part" ]; then
+      say "  resuming $(basename "$CACHED")"
+      curl -fL --retry 3 --retry-delay 3 -C - -o "$CACHED.part" "$RURL" || \
+        curl -fL --retry 3 --retry-delay 3 -o "$CACHED.part" "$RURL" || die "cannot download release"
+    else
+      curl -fL --retry 3 --retry-delay 3 -o "$CACHED.part" "$RURL" || die "cannot download release"
+    fi
+    echo "$RSHA  $CACHED.part" | sha256sum -c - >/dev/null || {
+      rm -f "$CACHED.part"
+      die "release sha256 mismatch"
+    }
+    mv "$CACHED.part" "$CACHED"
+  fi
+  ln -f "$CACHED" "$BUNDLE/release.tar.gz" 2>/dev/null || cp "$CACHED" "$BUNDLE/release.tar.gz"
   tar xzf "$BUNDLE/release.tar.gz" -C "$BUNDLE/extract"
   PANEL="$(find "$BUNDLE/extract" -path '*/panel-go/panel' -type f | head -1)"
   MAGPIE_BIN="$(find "$BUNDLE/extract" -path '*/gateway/bin/magpie' -type f | head -1)"
