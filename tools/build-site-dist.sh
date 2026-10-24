@@ -25,7 +25,7 @@ mkdir -p "$OUT"
 cp -R "$ROOT/web/." "$OUT/"
 
 mkdir -p "$OUT/tools"
-for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-tf.ps1 boards.json; do
+for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-tf.ps1 boards.json nokeyout-screen.dtbo; do
   cp "$ROOT/tools/$f" "$OUT/tools/$f"
 done
 

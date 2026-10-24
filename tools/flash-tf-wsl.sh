@@ -28,7 +28,9 @@ esac
 
 LOOP=""
 MNT=""
+BOOT_MNT=""
 cleanup() {
+  if [ -n "$BOOT_MNT" ] && mountpoint -q "$BOOT_MNT" 2>/dev/null; then umount "$BOOT_MNT" || true; fi
   if [ -n "$MNT" ] && mountpoint -q "$MNT" 2>/dev/null; then umount "$MNT" || true; fi
   if [ -n "$LOOP" ]; then losetup -d "$LOOP" 2>/dev/null || true; fi
   [ -n "$MNT" ] && rmdir "$MNT" 2>/dev/null || true
@@ -45,6 +47,16 @@ done
 
 MNT="$(mktemp -d)"
 mount -o rw "$ROOT" "$MNT"
+
+BOOT_PART="$(lsblk -rno NAME,LABEL,FSTYPE "$LOOP" | awk '$2=="armbi_boot" && $3=="ext4"{print "/dev/"$1; exit}')"
+if [ -z "$BOOT_PART" ]; then
+  BOOT_PART="$(lsblk -b -rno NAME,FSTYPE,SIZE "$LOOP" | awk '$2=="ext4"{print $3, "/dev/"$1}' | sort -n | head -1 | awk '{print $2}')"
+fi
+if [ -n "$BOOT_PART" ] && [ -b "$BOOT_PART" ]; then
+  mkdir -p "$MNT/boot"
+  mount -o rw "$BOOT_PART" "$MNT/boot"
+  BOOT_MNT="$MNT/boot"
+fi
 
 PASSWD="$MNT/etc/passwd"
 SHADOW="$MNT/etc/shadow"
@@ -211,6 +223,17 @@ if [ -n "$BUNDLE" ]; then
   cp -a "$BUNDLE/." "$MNT/var/lib/nokeyout/firstboot-bundle/"
   chmod -R go-rwx "$MNT/var/lib/nokeyout/firstboot-bundle"
   chmod 0755 "$MNT/var/lib/nokeyout/firstboot-bundle/panel" "$MNT/var/lib/nokeyout/firstboot-bundle/install-nokeyout.sh" 2>/dev/null || true
+fi
+
+if [ -n "$BOOT_MNT" ] && [ -n "$BUNDLE" ] && [ -f "$BUNDLE/nokeyout-screen.dtbo" ]; then
+  mkdir -p "$BOOT_MNT/overlay-user"
+  cp "$BUNDLE/nokeyout-screen.dtbo" "$BOOT_MNT/overlay-user/nokeyout-screen.dtbo"
+  ENV="$BOOT_MNT/armbianEnv.txt"
+  if grep -q '^user_overlays=' "$ENV" 2>/dev/null; then
+    grep -q 'nokeyout-screen' "$ENV" || sed -i 's/^user_overlays=.*/& nokeyout-screen/' "$ENV"
+  else
+    echo 'user_overlays=nokeyout-screen' >> "$ENV"
+  fi
 fi
 
 if [ -n "$USER_HOSTNAME" ]; then

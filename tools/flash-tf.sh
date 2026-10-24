@@ -28,6 +28,7 @@ LANG_CODE="${NOKEYOUT_LANG:-}"
 RELEASE_BASE="${NOKEYOUT_IMAGE_BASE:-https://nokeyout.com/releases/images}"
 CACHE_DIR="${NOKEYOUT_CACHE:-${XDG_CACHE_HOME:-/root/.cache}}/nokeyout-images"
 MNT=""
+BOOT_MNT=""
 TMP_IMG=""
 WORK=""
 
@@ -286,6 +287,16 @@ MNT="$WORK/root"
 mkdir -p "$MNT"
 mount -o rw "$ROOT_PART" "$MNT"
 
+BOOT_PART="$(lsblk -rno NAME,LABEL,FSTYPE "$DEVICE" | awk '$2=="armbi_boot" && $3=="ext4"{print "/dev/"$1; exit}')"
+if [ -z "$BOOT_PART" ]; then
+  BOOT_PART="$(lsblk -b -rno NAME,FSTYPE,SIZE "$DEVICE" | awk '$2=="ext4"{print $3, "/dev/"$1}' | sort -n | head -1 | awk '{print $2}')"
+fi
+if [ -n "$BOOT_PART" ] && [ -b "$BOOT_PART" ]; then
+  mkdir -p "$MNT/boot"
+  mount -o rw "$BOOT_PART" "$MNT/boot"
+  BOOT_MNT="$MNT/boot"
+fi
+
 PASSWD="$MNT/etc/passwd"
 SHADOW="$MNT/etc/shadow"
 GROUP="$MNT/etc/group"
@@ -394,6 +405,17 @@ if [ -n "$BUNDLE" ]; then
   chmod 0755 "$MNT/var/lib/nokeyout/firstboot-bundle/panel" "$MNT/var/lib/nokeyout/firstboot-bundle/install-nokeyout.sh" 2>/dev/null || true
 fi
 
+if [ -n "$BOOT_MNT" ] && [ -n "$BUNDLE" ] && [ -f "$BUNDLE/nokeyout-screen.dtbo" ]; then
+  mkdir -p "$BOOT_MNT/overlay-user"
+  cp "$BUNDLE/nokeyout-screen.dtbo" "$BOOT_MNT/overlay-user/nokeyout-screen.dtbo"
+  ENV="$BOOT_MNT/armbianEnv.txt"
+  if grep -q '^user_overlays=' "$ENV" 2>/dev/null; then
+    grep -q 'nokeyout-screen' "$ENV" || sed -i 's/^user_overlays=.*/& nokeyout-screen/' "$ENV"
+  else
+    echo 'user_overlays=nokeyout-screen' >> "$ENV"
+  fi
+fi
+
 if [ -n "$USER_HOSTNAME" ]; then
   printf '%s\n' "$USER_HOSTNAME" > "$MNT/etc/hostname"
   if [ -f "$MNT/etc/hosts" ]; then
@@ -403,6 +425,8 @@ if [ -n "$USER_HOSTNAME" ]; then
 fi
 
 sync
+if [ -n "$BOOT_MNT" ] && mountpoint -q "$BOOT_MNT" 2>/dev/null; then umount "$BOOT_MNT" || true; fi
+BOOT_MNT=""
 umount "$MNT"
 rmdir "$MNT" 2>/dev/null || true
 MNT=""

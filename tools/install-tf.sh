@@ -175,6 +175,11 @@ PY
     curl -fsSL "$TOOLS_BASE/install-nokeyout.sh" -o "$BUNDLE/install-nokeyout.sh" || die "cannot fetch install-nokeyout.sh"
   fi
   chmod 0755 "$BUNDLE/install-nokeyout.sh"
+  if [ -f "$HERE/nokeyout-screen.dtbo" ]; then
+    cp "$HERE/nokeyout-screen.dtbo" "$BUNDLE/nokeyout-screen.dtbo"
+  else
+    curl -fsSL "$TOOLS_BASE/nokeyout-screen.dtbo" -o "$BUNDLE/nokeyout-screen.dtbo" || die "cannot fetch nokeyout-screen.dtbo"
+  fi
 
   FB="$TMP/nokeyout-firstboot.sh"
   cat > "$FB" <<'EOS'

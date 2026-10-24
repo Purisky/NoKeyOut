@@ -316,6 +316,13 @@ function New-OfflineBundle([string]$Tmp) {
     $installer = Join-Path $bundle 'install-nokeyout.sh'
     Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/install-nokeyout.sh" -OutFile $installer
   }
+  $overlay = Join-Path $PSScriptRoot 'nokeyout-screen.dtbo'
+  if (-not (Test-Path -LiteralPath $overlay)) {
+    $overlay = Join-Path $bundle 'nokeyout-screen.dtbo'
+    Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/nokeyout-screen.dtbo" -OutFile $overlay
+  }
+  Copy-Item -LiteralPath $overlay -Destination (Join-Path $bundle 'nokeyout-screen.dtbo') -Force
+
   $dst = Join-Path $bundle 'install-nokeyout.sh'
   $text = [IO.File]::ReadAllText($installer, [Text.Encoding]::UTF8)
   $text = $text -replace "`r`n", "`n"
