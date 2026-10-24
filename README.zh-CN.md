@@ -70,6 +70,8 @@ curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
 
 下载会缓存并支持续传。Linux 使用 `~/.cache/nokeyout-images` 与 `~/.cache/nokeyout-releases`（可用 `NOKEYOUT_CACHE` 覆盖）；Windows 使用 `%LOCALAPPDATA%\nokeyout\cache`。两个平台都可用 `NOKEYOUT_CACHE` 覆盖缓存根目录。已有文件只有通过 SHA-256 校验才会复用；中断的 `.part` 会用 `curl -C -` / `wget -c` 续传。删除缓存目录即可强制重新下载。
 
+Armbian 首启会安装 SPI1 CS1 的 user overlay，可能自动重启一次；重启后小屏可用，安装继续。如果只有背光且 `/dev/spidev1.1` 不存在，把 `device/panel/overlays/nokeyout-screen.dts` 安装为 user overlay 后重启。
+
 ## 仓库
 
 | 路径 | 内容 |

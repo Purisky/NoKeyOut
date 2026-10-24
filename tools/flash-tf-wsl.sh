@@ -125,6 +125,49 @@ set -e
 B=/var/lib/nokeyout/firstboot-bundle
 LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
 [ "$LANG" = "zh" ] || LANG="en"
+
+if [ ! -f /var/lib/nokeyout/.dt-overlay-done ] && [ ! -e /dev/spidev1.1 ]; then
+  mkdir -p /var/lib/nokeyout
+  if command -v dtc >/dev/null 2>&1 && [ -d /boot/dtb ]; then
+    cat > /tmp/nokeyout-screen.dts <<'DTS'
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "friendlyelec,nanopi-neo3-plus", "rockchip,rk3528";
+
+	fragment@0 {
+		target = <&spi1>;
+		__overlay__ {
+			status = "okay";
+			num-cs = <2>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi1_csn0 &spi1_csn1 &spi1_pins>;
+
+			spidev@1 {
+				compatible = "armbian,spi-dev";
+				reg = <1>;
+				spi-max-frequency = <10000000>;
+				status = "okay";
+			};
+		};
+	};
+};
+DTS
+    mkdir -p /boot/overlay-user
+    dtc -@ -q -I dts -O dtb -o /boot/overlay-user/nokeyout-screen.dtbo /tmp/nokeyout-screen.dts
+    if grep -q '^user_overlays=' /boot/armbianEnv.txt 2>/dev/null; then
+      grep -q 'nokeyout-screen' /boot/armbianEnv.txt || sed -i 's/^user_overlays=.*/& nokeyout-screen/' /boot/armbianEnv.txt
+    else
+      echo 'user_overlays=nokeyout-screen' >> /boot/armbianEnv.txt
+    fi
+    touch /var/lib/nokeyout/.dt-overlay-done
+    sync
+    systemctl reboot
+    exit 0
+  fi
+fi
+
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$IP" ] || IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')"
 if [ -x "$B/panel" ]; then

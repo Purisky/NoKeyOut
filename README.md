@@ -70,6 +70,8 @@ curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
 
 Downloads are cached and resumable. Linux uses `~/.cache/nokeyout-images` and `~/.cache/nokeyout-releases` (override with `NOKEYOUT_CACHE`); Windows uses `%LOCALAPPDATA%\nokeyout\cache`. Set `NOKEYOUT_CACHE` to override the cache root on either platform. Existing files are reused only after SHA-256 verification; an interrupted `.part` resumes with `curl -C -` / `wget -c`. Delete the cache directory to force a fresh download.
 
+On Armbian, the first boot enables the SPI1 CS1 overlay and may reboot once; after the reboot the screen works and installation continues. If the screen only shows backlight and `/dev/spidev1.1` is missing, install `device/panel/overlays/nokeyout-screen.dts` as a user overlay and reboot.
+
 ## Repository
 
 | Path | Contents |
