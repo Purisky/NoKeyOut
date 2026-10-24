@@ -47,6 +47,22 @@ if [ ! -f device/tools/magpie-pull/magpie-pull ]; then
   }
 fi
 cp device/tools/magpie-pull/magpie-pull "$D/tools/magpie-pull/" || exit 1
+# 离线首装需要 arm64 magpie 直接随包；用主机架构的 puller 拉取目标架构镜像。
+MAGPIE_VER="${NOKEYOUT_MAGPIE_VERSION:-0.1.1322}"
+HOST_PULLER="$STAGE/magpie-pull-host"
+if [ -n "${NOKEYOUT_MAGPIE_BIN:-}" ] && [ -f "$NOKEYOUT_MAGPIE_BIN" ]; then
+  cp "$NOKEYOUT_MAGPIE_BIN" "$D/gateway/bin/magpie"
+elif [ ! -x "$D/gateway/bin/magpie" ]; then
+  ( cd device/tools/magpie-pull && go build -o "$HOST_PULLER" . ) || {
+    echo "  ❌ 无法构建主机 magpie-pull（离线包需要）" >&2
+    exit 1
+  }
+  "$HOST_PULLER" -arch arm64 "ghcr.io/yetone/magpie:$MAGPIE_VER" -o "$D/gateway/bin/magpie" || {
+    echo "  ❌ 无法拉取 arm64 magpie $MAGPIE_VER（离线包需要）" >&2
+    exit 1
+  }
+fi
+chmod 0755 "$D/gateway/bin/magpie"
 cp device/gateway/nokeyout-auth "$D/gateway/bin/" 2>/dev/null || \
   echo "  ⚠️ 包内无 gateway/bin/nokeyout-auth（发布前先跑 device/gateway/build-auth.sh）"
 cp device/panel-go/panel "$D/panel-go/" 2>/dev/null || {

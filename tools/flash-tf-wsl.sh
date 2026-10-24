@@ -13,6 +13,9 @@ IMG="${1:?image path}"
 HASH="${2:?password hash}"
 USER_NAME="${3:-nokeyout}"
 USER_HOSTNAME="${4:-nokeyout}"
+LANG_CODE="${5:-en}"
+BUNDLE="${6:-}"
+[ "$LANG_CODE" = "zh" ] || LANG_CODE=en
 
 command -v losetup >/dev/null 2>&1 || { echo "missing losetup" >&2; exit 1; }
 command -v lsblk >/dev/null 2>&1 || { echo "missing lsblk" >&2; exit 1; }
@@ -119,14 +122,20 @@ install -d "$MNT/usr/local/sbin" "$WANTS"
 cat > "$MNT/usr/local/sbin/nokeyout-firstboot" <<'EOS'
 #!/bin/sh
 set -e
+B=/var/lib/nokeyout/firstboot-bundle
+LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
+[ "$LANG" = "zh" ] || LANG="en"
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$IP" ] || IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')"
-if command -v curl >/dev/null 2>&1; then
-  curl -fL --retry 3 --retry-delay 3 https://nokeyout.com/tools/install-nokeyout.sh -o /tmp/install-nokeyout.sh
-else
-  wget -O /tmp/install-nokeyout.sh https://nokeyout.com/tools/install-nokeyout.sh
+if [ -x "$B/panel" ]; then
+  export NOKEYOUT_SCREEN_MSG="$B/panel"
+  "$B/panel" screen-msg start 0 "$LANG" || true
 fi
-NOKEYOUT_SCREEN=1 sh /tmp/install-nokeyout.sh --ip "$IP"
+[ -x "$B/install-nokeyout.sh" ] || {
+  [ -x "$B/panel" ] && "$B/panel" screen-msg error -1 "$LANG" || true
+  exit 1
+}
+NOKEYOUT_SCREEN=1 sh "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
 mkdir -p /var/lib/nokeyout
 touch /var/lib/nokeyout/.firstboot-done
 systemctl disable nokeyout-firstboot.service 2>/dev/null || true
@@ -136,8 +145,7 @@ chmod 0755 "$MNT/usr/local/sbin/nokeyout-firstboot"
 cat > "$MNT/etc/systemd/system/nokeyout-firstboot.service" <<'EOS'
 [Unit]
 Description=NoKeyOut first boot install
-Wants=network-online.target
-After=network-online.target
+After=local-fs.target
 ConditionPathExists=!/var/lib/nokeyout/.firstboot-done
 [Service]
 Type=oneshot
@@ -147,6 +155,20 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOS
 ln -sf ../nokeyout-firstboot.service "$WANTS/nokeyout-firstboot.service"
+
+install -d "$MNT/var/lib/nokeyout"
+printf '%s\n' "$LANG_CODE" > "$MNT/var/lib/nokeyout/lang"
+if [ -n "$BUNDLE" ]; then
+  case "$BUNDLE" in /*) ;; *) BUNDLE="$(wslpath -a "$BUNDLE")" ;; esac
+  [ -d "$BUNDLE" ] || { echo "bundle not found: $BUNDLE" >&2; exit 1; }
+  NEED_KB="$(du -sk "$BUNDLE" | awk '{print $1}')"
+  FREE_KB="$(df -k "$MNT" | awk 'NR==2{print $4}')"
+  [ "$FREE_KB" -gt "$NEED_KB" ] || die "offline bundle needs ${NEED_KB}KB, rootfs has ${FREE_KB}KB free"
+  install -d -m 0700 "$MNT/var/lib/nokeyout/firstboot-bundle"
+  cp -a "$BUNDLE/." "$MNT/var/lib/nokeyout/firstboot-bundle/"
+  chmod -R go-rwx "$MNT/var/lib/nokeyout/firstboot-bundle"
+  chmod 0755 "$MNT/var/lib/nokeyout/firstboot-bundle/panel" "$MNT/var/lib/nokeyout/firstboot-bundle/install-nokeyout.sh" 2>/dev/null || true
+fi
 
 if [ -n "$USER_HOSTNAME" ]; then
   printf '%s\n' "$USER_HOSTNAME" > "$MNT/etc/hostname"

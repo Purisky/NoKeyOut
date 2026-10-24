@@ -53,11 +53,20 @@ type subMani struct {
 }
 
 func main() {
-	if len(os.Args) < 4 || os.Args[2] != "-o" {
-		fmt.Fprintln(os.Stderr, "用法: magpie-pull <image:tag> -o <输出路径>")
+	arch := runtime.GOARCH
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-arch" && i+1 < len(args) {
+			arch = args[i+1]
+			args = append(args[:i], args[i+2:]...)
+			break
+		}
+	}
+	if len(args) < 3 || args[1] != "-o" {
+		fmt.Fprintln(os.Stderr, "用法: magpie-pull [-arch arm64] <image:tag> -o <输出路径>")
 		os.Exit(2)
 	}
-	ref, out := os.Args[1], os.Args[3]
+	ref, out := args[0], args[2]
 	reg, repo, tag := splitRef(ref)
 	if reg == "" || repo == "" || tag == "" {
 		fmt.Fprintln(os.Stderr, "镜像名需 registry/repo:tag 形式")
@@ -72,7 +81,7 @@ func main() {
 	}
 
 	// 2) manifest：index 则按本机 arch 选，直直接 manifest 则用之
-	m, err := fetchManifest(cl, reg, repo, tag, tok)
+	m, err := fetchManifest(cl, reg, repo, tag, tok, arch)
 	if err != nil {
 		fatal("manifest: %v", err)
 	}
@@ -171,7 +180,7 @@ func anonToken(cl *http.Client, reg, repo string) (string, error) {
 	return t.Token, nil
 }
 
-func fetchManifest(cl *http.Client, reg, repo, tag, tok string) (*manifest, error) {
+func fetchManifest(cl *http.Client, reg, repo, tag, tok, arch string) (*manifest, error) {
 	url := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, repo, tag)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -196,10 +205,10 @@ func fetchManifest(cl *http.Client, reg, repo, tag, tok string) (*manifest, erro
 	}
 	if len(m.Manifests) > 0 {
 		// index：选本机 os/arch
-		want := runtime.GOOS + "/" + runtime.GOARCH // linux/arm64
+		want := runtime.GOOS + "/" + arch // linux/arm64
 		for _, sm := range m.Manifests {
 			if sm.Platform.OS+"/"+sm.Platform.Architecture == want {
-				return fetchManifest(cl, reg, repo, sm.Digest, tok)
+				return fetchManifest(cl, reg, repo, sm.Digest, tok, arch)
 			}
 		}
 		return nil, fmt.Errorf("index 里没有 %s（只有 %d 个条目）", want, len(m.Manifests))

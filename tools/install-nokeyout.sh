@@ -17,11 +17,14 @@ IP=""
 PORT="8443"
 DRY=0
 SKIP_MAGPIE=0
+OFFLINE=""
 MAGPIE_VERSION="${NOKEYOUT_MAGPIE_VERSION:-0.1.1322}"
 SCREEN_MSG="${NOKEYOUT_SCREEN_MSG:-}"
+LANG_CODE="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
+[ "$LANG_CODE" = "zh" ] || LANG_CODE="en"
 TMP=""
 screen_msg() { [ -n "$SCREEN_MSG" ] && [ -x "$SCREEN_MSG" ] && "$SCREEN_MSG" screen-msg "$@" >/dev/null 2>&1 || true; }
-die() { screen_msg "Install failed" "Check console" 0; echo "install-nokeyout: $*" >&2; exit 1; }
+die() { screen_msg error -1 "$LANG_CODE"; echo "install-nokeyout: $*" >&2; exit 1; }
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 usage() { cat <<'EOF'
 Usage: sudo bash install-nokeyout.sh [options]
@@ -32,6 +35,7 @@ Usage: sudo bash install-nokeyout.sh [options]
   --url URL           Use a release tarball directly
   --sha256 HEX        SHA-256 for --url
   --manifest URL      Alternate manifest URL
+  --offline DIR       Install from a local bundle (manifest.json, .sig, release.pub, *.tar.gz)
   --skip-magpie-check Do not install magpie; use the existing service
   --dry-run           Print actions without changing the device
   -h, --help          Show this help
@@ -46,18 +50,39 @@ while [ $# -gt 0 ]; do case "$1" in
   --port) PORT="${2:-}"; shift 2 ;;
   --skip-magpie-check) SKIP_MAGPIE=1; shift ;;
   --manifest) MANIFEST="${2:-}"; shift 2 ;;
+  --offline) OFFLINE="${2:-}"; shift 2 ;;
   --dry-run) DRY=1; shift ;;
   -h|--help) usage; exit 0 ;;
   *) die "unknown argument: $1 (use --help)" ;;
 esac; done
 
 [ "$(id -u)" = 0 ] || die "run as root"
-for c in curl openssl tar sed grep awk sha256sum systemctl; do
+for c in openssl tar sed grep awk sha256sum systemctl; do
   command -v "$c" >/dev/null 2>&1 || die "missing tool: $c"
 done
+if [ -z "$OFFLINE" ]; then
+  command -v curl >/dev/null 2>&1 || die "missing tool: curl"
+fi
 
 cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; }
 TMP="$(mktemp -d)"; trap cleanup EXIT
+
+fetch() {
+  case "$1" in
+    file://*) cp "${1#file://}" "$2" ;;
+    http://*|https://*) curl -fsSL "$1" -o "$2" ;;
+    *) cp "$1" "$2" ;;
+  esac
+}
+
+if [ -n "$OFFLINE" ]; then
+  [ -d "$OFFLINE" ] || die "offline bundle not found: $OFFLINE"
+  MANIFEST="$OFFLINE/manifest.json"
+  PUBKEY_URL="$OFFLINE/release.pub"
+  URL="$OFFLINE/release.tar.gz"
+  [ -f "$MANIFEST" ] && [ -f "$MANIFEST.sig" ] && [ -f "$PUBKEY_URL" ] && [ -f "$URL" ] || \
+    die "offline bundle incomplete (need manifest.json, manifest.json.sig, release.pub, release.tar.gz)"
+fi
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -66,15 +91,17 @@ case "$ARCH" in
   *) die "unsupported architecture: $ARCH" ;;
 esac
 
-if [ -z "$URL" ]; then
-  screen_msg "Installing NoKeyOut" "Verifying release" 5
-  say "0/4 检查互联网"
-  curl -fsS --max-time 8 -o /dev/null https://nokeyout.com/release.pub || \
-    die "无法访问 nokeyout.com：检查网线/Wi-Fi、DNS、系统时间（NTP）后重试"
+if [ -n "$OFFLINE" ] || [ -z "$URL" ]; then
+  screen_msg start 0 "$LANG_CODE"
+  if [ -z "$OFFLINE" ]; then
+    say "0/4 检查互联网"
+    curl -fsS --max-time 8 -o /dev/null https://nokeyout.com/release.pub || \
+      die "无法访问 nokeyout.com：检查网线/Wi-Fi、DNS、系统时间（NTP）后重试"
+  fi
   say "1/4 校验发布清单"
-  curl -fsSL "$MANIFEST" -o "$TMP/manifest.json" || die "cannot fetch manifest"
-  curl -fsSL "$MANIFEST.sig" -o "$TMP/manifest.json.sig" || die "cannot fetch manifest signature"
-  curl -fsSL "$PUBKEY_URL" -o "$TMP/release.pub" || die "cannot fetch release key"
+  fetch "$MANIFEST" "$TMP/manifest.json" || die "cannot read manifest"
+  fetch "$MANIFEST.sig" "$TMP/manifest.json.sig" || die "cannot read manifest signature"
+  fetch "$PUBKEY_URL" "$TMP/release.pub" || die "cannot read release key"
   openssl pkeyutl -verify -pubin -inkey "$TMP/release.pub" -rawin \
     -in "$TMP/manifest.json" -sigfile "$TMP/manifest.json.sig" >/dev/null 2>&1 \
     || die "manifest signature verification failed"
@@ -82,16 +109,39 @@ if [ -z "$URL" ]; then
   MAGPIE_VERSION="$(sed -n 's/.*"magpie"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/manifest.json" | head -1)"
   [ -n "$MAGPIE_VERSION" ] || MAGPIE_VERSION="0.1.1322"
   ASSET_JSON="$(tr -d '\n' < "$TMP/manifest.json" | sed -n "s/.*\"$ASSET\"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p")"
-  URL="$(printf '%s' "$ASSET_JSON" | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  [ -n "$OFFLINE" ] || URL="$(printf '%s' "$ASSET_JSON" | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   SHA="$(printf '%s' "$ASSET_JSON" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   [ -n "$URL" ] || die "manifest has no $ASSET asset"
   [ -n "$SHA" ] || die "manifest asset has no sha256"
 fi
 
-screen_msg "Installing NoKeyOut" "Downloading release" 15
+screen_msg verify 10 "$LANG_CODE"
+download_with_progress() {
+  url="$1"; out="$2"
+  total="$(curl -fsIL "$url" 2>/dev/null | awk 'tolower($1)=="content-length:"{v=$2} END{print v}' | tr -d '\r')"
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  curl -fL --retry 3 --retry-delay 2 -o "$out" "$url" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$total" -gt 0 ]; then
+      n="$(wc -c < "$out" 2>/dev/null || echo 0)"
+      pct=$((n * 100 / total)); [ "$pct" -gt 100 ] && pct=100
+      screen_msg download $((15 + pct * 40 / 100)) "$LANG_CODE"
+    fi
+    sleep 1
+  done
+  wait "$pid"
+}
+
 say "2/4 下载 NoKeyOut $VERSION"
 TAR="$TMP/$(basename "${URL%%\?*}")"
-curl -fL --retry 3 --retry-delay 2 -o "$TAR.part" "$URL" || die "download failed"
+if [ -n "$OFFLINE" ]; then
+  cp "$URL" "$TAR.part" || die "copy bundle failed"
+  screen_msg prepare 55 "$LANG_CODE"
+else
+  download_with_progress "$URL" "$TAR.part" || die "download failed"
+  screen_msg download 55 "$LANG_CODE"
+fi
 mv "$TAR.part" "$TAR"
 if [ -n "$SHA" ]; then
   GOT="$(sha256sum "$TAR" | awk '{print $1}')"
@@ -99,12 +149,12 @@ if [ -n "$SHA" ]; then
 fi
 
 say "3/4 解压 release"
+screen_msg extract 60 "$LANG_CODE"
 mkdir -p "$TMP/rel"
 tar xzf "$TAR" -C "$TMP/rel"
 DIR="$(find "$TMP/rel" -mindepth 1 -maxdepth 1 -type d | head -1)"
 [ -n "$DIR" ] && [ -f "$DIR/panel/setup.sh" ] || die "release layout invalid (panel/setup.sh missing)"
 if [ -z "$SCREEN_MSG" ] && [ -x "$DIR/panel-go/panel" ]; then SCREEN_MSG="$DIR/panel-go/panel"; fi
-screen_msg "Installing NoKeyOut" "Release verified" 25
 
 if [ -z "$IP" ]; then
   IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -112,17 +162,29 @@ fi
 [ -n "$IP" ] || die "cannot detect IP; pass --ip <device-ip>"
 
 if [ "$SKIP_MAGPIE" != 1 ] && ! systemctl is-active --quiet nokeyout-magpie-binary 2>/dev/null; then
-  screen_msg "Installing NoKeyOut" "Installing gateway" 45
-  say "3b/4 安装 magpie 二进制（OCI 直取）"
+  screen_msg gateway 75 "$LANG_CODE"
+  say "3b/4 安装 magpie 二进制"
   PULLER="$DIR/tools/magpie-pull/magpie-pull"
-  [ -x "$PULLER" ] || die "release 缺 tools/magpie-pull/magpie-pull；无法安装 magpie"
+  BUNDLED_MAGPIE="$DIR/gateway/bin/magpie"
+  if [ -n "$OFFLINE" ] && [ ! -x "$BUNDLED_MAGPIE" ]; then
+    die "offline release has no gateway/bin/magpie"
+  fi
+  [ -x "$PULLER" ] || [ -x "$BUNDLED_MAGPIE" ] || die "release 缺 magpie（gateway/bin/magpie 或 magpie-pull）"
   if [ "$DRY" = 1 ]; then
-    echo "  dry-run: $PULLER ghcr.io/yetone/magpie:$MAGPIE_VERSION"
+    if [ -x "$BUNDLED_MAGPIE" ]; then
+      echo "  dry-run: bundled $BUNDLED_MAGPIE"
+    else
+      echo "  dry-run: $PULLER ghcr.io/yetone/magpie:$MAGPIE_VERSION"
+    fi
   else
     BIN="/usr/local/bin/magpie-$MAGPIE_VERSION"
-    "$PULLER" "ghcr.io/yetone/magpie:$MAGPIE_VERSION" -o "$BIN" || \
-      "$PULLER" "ghcr.nju.edu.cn/yetone/magpie:$MAGPIE_VERSION" -o "$BIN" || \
-      die "magpie OCI 直取失败"
+    if [ -x "$BUNDLED_MAGPIE" ]; then
+      install -m 0755 "$BUNDLED_MAGPIE" "$BIN"
+    else
+      "$PULLER" "ghcr.io/yetone/magpie:$MAGPIE_VERSION" -o "$BIN" || \
+        "$PULLER" "ghcr.nju.edu.cn/yetone/magpie:$MAGPIE_VERSION" -o "$BIN" || \
+        die "magpie OCI 直取失败"
+    fi
     chmod 0755 "$BIN"; ln -sfn "$BIN" /usr/local/bin/magpie
     getent group 65532 >/dev/null || groupadd -r -g 65532 magpie-rt
     getent passwd 65532 >/dev/null || useradd -r -u 65532 -g 65532 -s /usr/sbin/nologin magpie-rt
@@ -163,13 +225,13 @@ EOS
   fi
 fi
 
-screen_msg "Installing NoKeyOut" "Configuring panel" 70
+screen_msg panel 88 "$LANG_CODE"
 say "4/4 安装 NoKeyOut（panel :$PORT，二进制 magpie）"
 ARGS=(--ip "$IP" --port "$PORT")
 [ "$DRY" = 1 ] && ARGS+=(--dry-run)
 ( cd "$DIR" && bash panel/setup.sh "${ARGS[@]}" )
 
-screen_msg "Install complete" "Open :$PORT" 100
+screen_msg done 100 "$LANG_CODE"
 say "完成"
 echo "  管理面: https://$IP:$PORT/"
 echo "  屏幕门控: panel-go screen-gate status|pass"

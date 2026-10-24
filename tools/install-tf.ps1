@@ -53,6 +53,7 @@ $ToolsBase = if ($env:NOKEYOUT_TOOLS_BASE) { $env:NOKEYOUT_TOOLS_BASE.TrimEnd('/
 $IndexUrl = if ($env:NOKEYOUT_IMAGE_INDEX) { $env:NOKEYOUT_IMAGE_INDEX } else { 'https://github.armbian.com/armbian-images.json' }
 $SevenZipUrl = 'https://www.7-zip.org/a/7zr.exe'
 $SevenZipSha = '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282'
+$HostLang = if ($env:NOKEYOUT_LANG -eq 'zh') { 'zh' } elseif ($env:NOKEYOUT_LANG -eq 'en') { 'en' } elseif (([System.Globalization.CultureInfo]::CurrentUICulture.Name) -like 'zh*') { 'zh' } else { 'en' }
 
 function Say([string]$msg) { Write-Host "==> $msg" }
 function Fail([string]$msg) { throw $msg }
@@ -212,7 +213,60 @@ function Read-PlainPassword([string]$Prompt) {
   finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
 }
 
-function Set-ImageFirstboot([string]$Img, [string]$Tmp) {
+function New-OfflineBundle([string]$Tmp) {
+  $bundle = Join-Path $Tmp 'bundle'
+  New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+  $manifestUrl = if ($env:NOKEYOUT_RELEASE_URL) { $env:NOKEYOUT_RELEASE_URL } else { 'https://nokeyout.com/releases/stable/manifest.json' }
+  $pubUrl = if ($env:NOKEYOUT_PUBKEY_URL) { $env:NOKEYOUT_PUBKEY_URL } else { 'https://nokeyout.com/release.pub' }
+
+  Say 'Downloading release manifest'
+  Invoke-WebRequest -UseBasicParsing -Uri $manifestUrl -OutFile (Join-Path $bundle 'manifest.json')
+  Invoke-WebRequest -UseBasicParsing -Uri ($manifestUrl + '.sig') -OutFile (Join-Path $bundle 'manifest.json.sig')
+  Invoke-WebRequest -UseBasicParsing -Uri $pubUrl -OutFile (Join-Path $bundle 'release.pub')
+
+  $m = Get-Content -LiteralPath (Join-Path $bundle 'manifest.json') -Raw | ConvertFrom-Json
+  $asset = $m.assets.'linux-arm64'
+  if (-not $asset -or -not $asset.url -or -not $asset.sha256) { Fail 'manifest has no linux-arm64 asset' }
+  Say ("Downloading NoKeyOut {0}" -f $m.version)
+  $tar = Join-Path $bundle 'release.tar.gz'
+  $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+  if (Test-Path -LiteralPath $curl) {
+    & $curl -fL --retry 3 --retry-delay 3 -o $tar $asset.url
+    if ($LASTEXITCODE -ne 0) { Fail "release download failed: $LASTEXITCODE" }
+  } else {
+    Invoke-WebRequest -UseBasicParsing -Uri $asset.url -OutFile $tar
+  }
+  $got = (Get-FileHash -LiteralPath $tar -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($got -ne ([string]$asset.sha256).ToLowerInvariant()) { Fail "release SHA-256 mismatch (got $got)" }
+
+  $ex = Join-Path $bundle 'extract'
+  New-Item -ItemType Directory -Path $ex -Force | Out-Null
+  $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
+  if (-not (Test-Path -LiteralPath $tarExe)) { Fail 'tar.exe not found (Windows 10 1803+ required)' }
+  & $tarExe -xzf $tar -C $ex
+  if ($LASTEXITCODE -ne 0) { Fail "cannot extract release: $LASTEXITCODE" }
+  $panel = Get-ChildItem -LiteralPath $ex -Recurse -File -Filter panel |
+    Where-Object { $_.DirectoryName -like '*panel-go*' } | Select-Object -First 1
+  $magpie = Get-ChildItem -LiteralPath $ex -Recurse -File -Filter magpie |
+    Where-Object { $_.DirectoryName -like '*gateway*bin*' } | Select-Object -First 1
+  if (-not $panel) { Fail 'release has no panel-go/panel' }
+  if (-not $magpie) { Fail 'release has no gateway/bin/magpie; rebuild it for offline first boot' }
+  Copy-Item -LiteralPath $panel.FullName -Destination (Join-Path $bundle 'panel')
+  Remove-Item -LiteralPath $ex -Recurse -Force
+
+  $installer = Join-Path $PSScriptRoot 'install-nokeyout.sh'
+  if (-not (Test-Path -LiteralPath $installer)) {
+    $installer = Join-Path $bundle 'install-nokeyout.sh'
+    Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/install-nokeyout.sh" -OutFile $installer
+  }
+  $dst = Join-Path $bundle 'install-nokeyout.sh'
+  $text = [IO.File]::ReadAllText($installer, [Text.Encoding]::UTF8)
+  $text = $text -replace "`r`n", "`n"
+  [IO.File]::WriteAllText($dst, $text, (New-Object Text.UTF8Encoding($false)))
+  return $bundle
+}
+
+function Set-ImageFirstboot([string]$Img, [string]$Tmp, [string]$Bundle) {
   if ($NoDeploy) {
     Write-Host 'Skipping firstboot injection (-NoDeploy).'
     return $false
@@ -220,8 +274,7 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp) {
 
   $wslInfo = Find-WslDistro $WslDistro
   if (-not $wslInfo) {
-    Write-Warning 'WSL2 not found. Writing the Armbian image without the firstboot installer.'
-    return $false
+    Fail 'WSL2 is required for offline first boot; use -NoDeploy to write the Armbian image only'
   }
 
   $script = Join-Path $PSScriptRoot 'flash-tf-wsl.sh'
@@ -248,7 +301,8 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp) {
   $wslScript = ConvertTo-WslPath $script
   $wslImg = ConvertTo-WslPath $Img
   Say 'Injecting user, SSH and firstboot into the image (WSL2)'
-  $run = $wslArgs + @('bash', $wslScript, $wslImg, $hash, 'nokeyout', 'nokeyout')
+  $wslBundle = ConvertTo-WslPath $Bundle
+  $run = $wslArgs + @('bash', $wslScript, $wslImg, $hash, 'nokeyout', 'nokeyout', $HostLang, $wslBundle)
   & $wslInfo.Exe @run
   if ($LASTEXITCODE -ne 0) {
     Fail 'WSL firstboot injection failed; use -NoDeploy to write without it'
@@ -465,7 +519,14 @@ try {
   }
 
   $img = Expand-ImageArchive $source $tmp $SevenZip
-  $deployed = Set-ImageFirstboot $img $tmp
+  $bundle = $null
+  if (-not $NoDeploy) {
+    if (-not (Find-WslDistro $WslDistro)) {
+      Fail 'WSL2 is required for offline first boot; use -NoDeploy to write the Armbian image only'
+    }
+    $bundle = New-OfflineBundle $tmp
+  }
+  $deployed = Set-ImageFirstboot $img $tmp $bundle
   if ($PrepareOnly) {
     Write-Host "Prepared: $img"
     return

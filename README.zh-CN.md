@@ -62,7 +62,7 @@ sudo bash tools/install-tf.sh --board neo3plus
 powershell -ExecutionPolicy Bypass -File .\tools\install-tf.ps1 -Board neo3plus
 ```
 
-有 WSL2 时，Windows 脚本还会创建 `nokeyout` 用户、启用 SSH，并注入一次性首次启动安装服务；开机后会自动安装 NoKeyOut（需要联网）。没有 WSL2 时只写入 Armbian 镜像，板子首次登录后再执行：
+发行包在烧录时下载，不在首次启动时下载。有 WSL2 时，Windows 脚本还会创建 `nokeyout` 用户、启用 SSH，并把这份签名发行包写入卡内；首次启动离线安装同一版本。没有 WSL2 时加 `-NoDeploy` 只写入 Armbian 镜像，板子首次登录后再执行：
 
 ```bash
 curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
@@ -106,6 +106,20 @@ sudo ./device/panel/setup.sh --ip <device-ip> --port 8443
 | `8443` | 管理面 |
 | `3425` | 网关（magpie） |
 | `3430` | magpie web UI，仅绑回环 |
+
+要烧录指定版本，把 `NOKEYOUT_RELEASE_URL` 指向该版本的 `manifest.json`（`NOKEYOUT_RELEASE_URL=... sudo bash tools/install-tf.sh --board neo3plus`）。
+
+## 更新
+
+更新是手动动作：在管理面「系统」页使用签名更新按钮，或执行：
+
+```bash
+nokeyout-update check
+nokeyout-update install
+nokeyout-update rollback
+```
+
+烧录时写入的发行包是初始基线；首次启动只安装这个版本，不会联网拉取或自动升级。
 
 ## License
 

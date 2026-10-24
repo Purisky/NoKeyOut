@@ -23,6 +23,8 @@ BOARD=""
 USER_HOSTNAME="nokeyout"
 CONFIGURE_ONLY=0
 FIRSTBOOT=""
+BUNDLE=""
+LANG_CODE="${NOKEYOUT_LANG:-}"
 RELEASE_BASE="${NOKEYOUT_IMAGE_BASE:-https://nokeyout.com/releases/images}"
 CACHE_DIR="${XDG_CACHE_HOME:-/root/.cache}/nokeyout-images"
 MNT=""
@@ -44,6 +46,8 @@ Usage: flash-tf.sh [options]
   --root-part PATH     Rootfs partition (default: largest ext4 partition)
   --configure-only     Do not write the image; only configure the mounted rootfs
   --firstboot PATH     Install this script as a one-shot first-boot service
+  --bundle DIR         Copy an offline firstboot bundle into the rootfs
+  --lang zh|en         UI language written to /var/lib/nokeyout/lang (default: host locale)
   -h, --help           Show this help
 
 Defaults: user and hostname are `nokeyout`; there is no default board.
@@ -65,6 +69,8 @@ while [ $# -gt 0 ]; do
     --root-part) ROOT_PART="${2:-}"; shift 2 ;;
     --configure-only) CONFIGURE_ONLY=1; shift ;;
     --firstboot) FIRSTBOOT="${2:-}"; shift 2 ;;
+    --bundle) BUNDLE="${2:-}"; shift 2 ;;
+    --lang) LANG_CODE="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (use --help)" ;;
   esac
@@ -331,8 +337,7 @@ if [ -n "$FIRSTBOOT" ]; then
   cat > "$MNT/etc/systemd/system/nokeyout-firstboot.service" <<'EOS'
 [Unit]
 Description=NoKeyOut first boot install
-Wants=network-online.target
-After=network-online.target
+After=local-fs.target
 ConditionPathExists=!/var/lib/nokeyout/.firstboot-done
 [Service]
 Type=oneshot
@@ -342,6 +347,19 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOS
   ln -sf ../nokeyout-firstboot.service "$MNT/etc/systemd/system/multi-user.target.wants/nokeyout-firstboot.service"
+fi
+
+install -d "$MNT/var/lib/nokeyout"
+printf '%s\n' "$LANG_CODE" > "$MNT/var/lib/nokeyout/lang"
+if [ -n "$BUNDLE" ]; then
+  [ -d "$BUNDLE" ] || die "--bundle not found: $BUNDLE"
+  NEED_KB="$(du -sk "$BUNDLE" | awk '{print $1}')"
+  FREE_KB="$(df -k "$MNT" | awk 'NR==2{print $4}')"
+  [ "$FREE_KB" -gt "$NEED_KB" ] || die "offline bundle needs ${NEED_KB}KB, rootfs has ${FREE_KB}KB free"
+  install -d -m 0700 "$MNT/var/lib/nokeyout/firstboot-bundle"
+  cp -a "$BUNDLE/." "$MNT/var/lib/nokeyout/firstboot-bundle/"
+  chmod -R go-rwx "$MNT/var/lib/nokeyout/firstboot-bundle"
+  chmod 0755 "$MNT/var/lib/nokeyout/firstboot-bundle/panel" "$MNT/var/lib/nokeyout/firstboot-bundle/install-nokeyout.sh" 2>/dev/null || true
 fi
 
 if [ -n "$USER_HOSTNAME" ]; then

@@ -62,7 +62,7 @@ sudo bash tools/install-tf.sh --board neo3plus
 powershell -ExecutionPolicy Bypass -File .\tools\install-tf.ps1 -Board neo3plus
 ```
 
-With WSL2 available, the Windows script also creates the `nokeyout` user, enables SSH, and injects a one-shot first-boot installer, so NoKeyOut installs automatically on first boot (internet required). Without WSL2 it writes the Armbian image only; after the board's first login, run:
+The release is downloaded at flash time, not on first boot. With WSL2 available, the Windows script also creates the `nokeyout` user, enables SSH, and bundles that exact signed release into the card; first boot installs it offline. Without WSL2, add `-NoDeploy` to write the Armbian image only; after the board's first login, run:
 
 ```bash
 curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
@@ -106,6 +106,20 @@ The setup script installs the Go panel, a systemd unit, a self-signed certificat
 | `8443` | Management panel |
 | `3425` | Gateway (magpie) |
 | `3430` | magpie web UI, bound to loopback |
+
+To flash a specific release, set `NOKEYOUT_RELEASE_URL` to that version's `manifest.json` (`NOKEYOUT_RELEASE_URL=... sudo bash tools/install-tf.sh --board neo3plus`).
+
+## Updates
+
+Updates are manual: use the signed update controls in the panel's System tab, or run:
+
+```bash
+nokeyout-update check
+nokeyout-update install
+nokeyout-update rollback
+```
+
+The release written at flash time is the initial baseline. First boot installs that exact version; it does not fetch or update to a newer release.
 
 ## License
 

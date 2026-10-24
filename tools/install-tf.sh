@@ -15,6 +15,8 @@ DEPLOY=1
 RESOLVE_ONLY=0
 INDEX="https://github.armbian.com/armbian-images.json"
 TOOLS_BASE="${NOKEYOUT_TOOLS_BASE:-https://nokeyout.com/tools}"
+RELEASE_MANIFEST="${NOKEYOUT_RELEASE_URL:-https://nokeyout.com/releases/stable/manifest.json}"
+RELEASE_PUBKEY="${NOKEYOUT_PUBKEY_URL:-https://nokeyout.com/release.pub}"
 die() { echo "install-tf: $*" >&2; exit 1; }
 say() { printf '\n\033[1m== %s \033[0m\n' "$*"; }
 usage() { cat <<'EOF'
@@ -46,6 +48,7 @@ for c in python3 python; do
 done
 [ -n "$PYTHON" ] || die "python3 is required to resolve the Armbian image index"
 command -v curl >/dev/null 2>&1 || die "curl is required"
+for c in openssl tar sha256sum; do command -v "$c" >/dev/null 2>&1 || die "$c is required"; done
 
 say "1/3 解析板型与官方镜像"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -110,16 +113,62 @@ fi
 [ "$RESOLVE_ONLY" = 1 ] && exit 0
 
 FB=""
+BUNDLE=""
 if [ "$DEPLOY" = 1 ]; then
-  say "2/3 准备首次启动安装"
+  say "2/3 准备离线安装包"
+  BUNDLE="$TMP/bundle"
+  mkdir -p "$BUNDLE/extract"
+  curl -fsSL "$RELEASE_MANIFEST" -o "$BUNDLE/manifest.json" || die "cannot fetch release manifest"
+  curl -fsSL "$RELEASE_MANIFEST.sig" -o "$BUNDLE/manifest.json.sig" || die "cannot fetch manifest signature"
+  curl -fsSL "$RELEASE_PUBKEY" -o "$BUNDLE/release.pub" || die "cannot fetch release key"
+  openssl pkeyutl -verify -pubin -inkey "$BUNDLE/release.pub" -rawin \
+    -in "$BUNDLE/manifest.json" -sigfile "$BUNDLE/manifest.json.sig" >/dev/null 2>&1 \
+    || die "release manifest signature verification failed"
+  IFS=$'\t' read -r RVER RMAGPIE RURL RSHA <<< "$($PYTHON - "$BUNDLE/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8"))
+a = (m.get("assets") or {}).get("linux-arm64") or {}
+print("\t".join([str(m.get("version", "")), str(m.get("magpie", "")),
+                 str(a.get("url", "")), str(a.get("sha256", ""))]))
+PY
+)"
+  [ -n "$RURL" ] && [ -n "$RSHA" ] || die "manifest has no linux-arm64 asset"
+  say "  release: $RVER (magpie $RMAGPIE)"
+  curl -fL --retry 3 --retry-delay 3 -o "$BUNDLE/release.tar.gz.part" "$RURL" || die "cannot download release"
+  mv "$BUNDLE/release.tar.gz.part" "$BUNDLE/release.tar.gz"
+  echo "$RSHA  $BUNDLE/release.tar.gz" | sha256sum -c - >/dev/null || die "release sha256 mismatch"
+  tar xzf "$BUNDLE/release.tar.gz" -C "$BUNDLE/extract"
+  PANEL="$(find "$BUNDLE/extract" -path '*/panel-go/panel' -type f | head -1)"
+  MAGPIE_BIN="$(find "$BUNDLE/extract" -path '*/gateway/bin/magpie' -type f | head -1)"
+  [ -n "$PANEL" ] || die "release has no panel-go/panel"
+  [ -n "$MAGPIE_BIN" ] || die "release has no gateway/bin/magpie; rebuild it for offline first boot"
+  cp "$PANEL" "$BUNDLE/panel"; chmod 0755 "$BUNDLE/panel"
+  rm -rf "$BUNDLE/extract"
+  if [ -f "$HERE/install-nokeyout.sh" ]; then
+    cp "$HERE/install-nokeyout.sh" "$BUNDLE/install-nokeyout.sh"
+  else
+    curl -fsSL "$TOOLS_BASE/install-nokeyout.sh" -o "$BUNDLE/install-nokeyout.sh" || die "cannot fetch install-nokeyout.sh"
+  fi
+  chmod 0755 "$BUNDLE/install-nokeyout.sh"
+
   FB="$TMP/nokeyout-firstboot.sh"
   cat > "$FB" <<'EOS'
 #!/bin/sh
 set -e
+B=/var/lib/nokeyout/firstboot-bundle
+LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
+[ "$LANG" = "zh" ] || LANG="en"
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$IP" ] || IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')"
-curl -fL --retry 3 --retry-delay 3 https://nokeyout.com/tools/install-nokeyout.sh -o /tmp/install-nokeyout.sh
-NOKEYOUT_SCREEN=1 sh /tmp/install-nokeyout.sh --ip "$IP"
+if [ -x "$B/panel" ]; then
+  export NOKEYOUT_SCREEN_MSG="$B/panel"
+  "$B/panel" screen-msg start 0 "$LANG" || true
+fi
+[ -x "$B/install-nokeyout.sh" ] || {
+  [ -x "$B/panel" ] && "$B/panel" screen-msg error -1 "$LANG" || true
+  exit 1
+}
+NOKEYOUT_SCREEN=1 sh "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
 mkdir -p /var/lib/nokeyout
 touch /var/lib/nokeyout/.firstboot-done
 systemctl disable nokeyout-firstboot.service 2>/dev/null || true
@@ -133,6 +182,7 @@ say "3/3 写卡"
 ARGS=(--board "$BOARD" --image-url "$IMAGE_URL")
 [ -n "$SHA" ] && ARGS+=(--sha256 "$SHA")
 [ -n "$FB" ] && ARGS+=(--firstboot "$FB")
+[ -n "$BUNDLE" ] && ARGS+=(--bundle "$BUNDLE")
 FLASH="$HERE/flash-tf.sh"
 if [ ! -f "$FLASH" ]; then
   FLASH="$TMP/flash-tf.sh"
@@ -140,4 +190,4 @@ if [ ! -f "$FLASH" ]; then
 fi
 bash "$FLASH" "${ARGS[@]}"
 echo
-echo "完成。插卡启动后，firstboot 会自动运行 install-nokeyout.sh。"
+echo "完成。插卡启动后，firstboot 会用卡内离线包安装；更新在管理面手动执行。"
