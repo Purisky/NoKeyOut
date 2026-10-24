@@ -7,7 +7,8 @@
 # 只保留教程运行时会请求的文件；测试、文档、KiCad/STEP 源文件、
 # 3D review 文件和不参与运行时的备用网格不进入发布包。
 # 站点全部来自 web/：主页在根，3D 组装小游戏在 /diy/；
-# 另附在线安装脚本（tools/install-nokeyout.sh → /tools/install-nokeyout.sh，文档里约定的地址）。
+# 另附在线安装/烧录脚本（install-nokeyout.sh、install-tf.sh、flash-tf.sh、
+# install-tf.ps1、flash-tf-wsl.sh、boards.json → /tools/）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/dist/site}"
@@ -24,7 +25,9 @@ mkdir -p "$OUT"
 cp -R "$ROOT/web/." "$OUT/"
 
 mkdir -p "$OUT/tools"
-cp "$ROOT/tools/install-nokeyout.sh" "$OUT/tools/install-nokeyout.sh"
+for f in install-nokeyout.sh install-tf.sh flash-tf.sh flash-tf-wsl.sh install-tf.ps1 boards.json; do
+  cp "$ROOT/tools/$f" "$OUT/tools/$f"
+done
 
 # 开发/源文件，不进 Pages
 rm -rf "$OUT/diy/test" "$OUT/diy/levels/level-2-gating.js" "$OUT/diy/levels/level-3-spi.js" "$OUT/diy/levels/level-4-screen.js"

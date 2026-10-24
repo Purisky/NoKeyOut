@@ -50,6 +50,24 @@ graph LR
 
 [开始组装](https://nokeyout.com/diy/)
 
+烧录 TF 卡：
+
+```bash
+# Linux（root）
+sudo bash tools/install-tf.sh --board neo3plus
+```
+
+```powershell
+# Windows 10/11（管理员）
+powershell -ExecutionPolicy Bypass -File .\tools\install-tf.ps1 -Board neo3plus
+```
+
+有 WSL2 时，Windows 脚本还会创建 `nokeyout` 用户、启用 SSH，并注入一次性首次启动安装服务；开机后会自动安装 NoKeyOut（需要联网）。没有 WSL2 时只写入 Armbian 镜像，板子首次登录后再执行：
+
+```bash
+curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
+```
+
 ## 仓库
 
 | 路径 | 内容 |

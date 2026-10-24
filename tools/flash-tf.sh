@@ -254,18 +254,18 @@ GROUP="$MNT/etc/group"
 [ -f "$PASSWD" ] && [ -f "$GROUP" ] || die "not a Linux rootfs (missing /etc/passwd or /etc/group)"
 
 if grep -q "^$USER_NAME:" "$PASSWD"; then
-  UID="$(awk -F: -v u="$USER_NAME" '$1==u{print $3}' "$PASSWD")"
-  GID="$(awk -F: -v u="$USER_NAME" '$1==u{print $4}' "$PASSWD")"
+  USER_ID="$(awk -F: -v u="$USER_NAME" '$1==u{print $3}' "$PASSWD")"
+  GROUP_ID="$(awk -F: -v u="$USER_NAME" '$1==u{print $4}' "$PASSWD")"
   say "User exists; updating password/groups"
 else
-  UID=1000
-  while awk -F: -v id="$UID" '$3==id{found=1} END{exit !found}' "$PASSWD"; do UID=$((UID+1)); done
-  GID=1000
-  while awk -F: -v id="$GID" '$3==id{found=1} END{exit !found}' "$GROUP"; do GID=$((GID+1)); done
+  USER_ID=1000
+  while awk -F: -v id="$USER_ID" '$3==id{found=1} END{exit !found}' "$PASSWD"; do USER_ID=$((USER_ID+1)); done
+  GROUP_ID=1000
+  while awk -F: -v id="$GROUP_ID" '$3==id{found=1} END{exit !found}' "$GROUP"; do GROUP_ID=$((GROUP_ID+1)); done
   SHELL_BIN="/bin/bash"; [ -x "$MNT/bin/bash" ] || SHELL_BIN="/bin/sh"
-  printf '%s:x:%s:%s:%s:/home/%s:%s\n' "$USER_NAME" "$UID" "$GID" "$USER_NAME" "$USER_NAME" "$SHELL_BIN" >> "$PASSWD"
-  printf '%s:x:%s:\n' "$USER_NAME" "$GID" >> "$GROUP"
-  say "Created user $USER_NAME (uid=$UID gid=$GID)"
+  printf '%s:x:%s:%s:%s:/home/%s:%s\n' "$USER_NAME" "$USER_ID" "$GROUP_ID" "$USER_NAME" "$USER_NAME" "$SHELL_BIN" >> "$PASSWD"
+  printf '%s:x:%s:\n' "$USER_NAME" "$GROUP_ID" >> "$GROUP"
+  say "Created user $USER_NAME (uid=$USER_ID gid=$GROUP_ID)"
 fi
 
 if [ -f "$SHADOW" ]; then
@@ -291,14 +291,14 @@ for grp in sudo wheel; do
   fi
 done
 
-install -d -m 700 -o "$UID" -g "$GID" "$MNT/home/$USER_NAME" "$MNT/home/$USER_NAME/.ssh" 2>/dev/null || {
+install -d -m 700 -o "$USER_ID" -g "$GROUP_ID" "$MNT/home/$USER_NAME" "$MNT/home/$USER_NAME/.ssh" 2>/dev/null || {
   mkdir -p "$MNT/home/$USER_NAME/.ssh"
   chmod 700 "$MNT/home/$USER_NAME" "$MNT/home/$USER_NAME/.ssh"
-  chown -R "$UID:$GID" "$MNT/home/$USER_NAME"
+  chown -R "$USER_ID:$GROUP_ID" "$MNT/home/$USER_NAME"
 }
 : > "$MNT/home/$USER_NAME/.ssh/authorized_keys"
 chmod 600 "$MNT/home/$USER_NAME/.ssh/authorized_keys"
-chown -R "$UID:$GID" "$MNT/home/$USER_NAME"
+chown -R "$USER_ID:$GROUP_ID" "$MNT/home/$USER_NAME"
 
 SSHD="$MNT/etc/ssh/sshd_config"
 if [ -f "$SSHD" ]; then

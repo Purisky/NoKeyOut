@@ -38,6 +38,7 @@ const I18N = {
     'tf.boardNote': '烧录脚本基于 NanoPi NEO3 Plus 编写；其他主板请直接点击“跳过烧录”。',
     'tf.termDone': '写卡完成：点 × 关闭，再点卡槽插卡；首次启动需联网安装 NoKeyOut。',
     'tf.cmdHint': '命令已带 --board neo3plus；选盘、输入 YES、输两次密码。首次启动需联网安装 NoKeyOut。',
+    'tf.windows': 'Windows：以管理员运行 install-tf.ps1 -Board neo3plus。',
     'tf.param.fetch': '用 curl 取 install-tf.sh 到 /tmp',
     'tf.param.board': 'neo3plus：按板型解析 Armbian 镜像',
     'tf.param.resolve': '只解析镜像，不写卡',
@@ -95,6 +96,7 @@ const I18N = {
     'tf.boardNote': 'The flashing script is written for the NanoPi NEO3 Plus. For other boards, click “Skip flashing”.',
     'tf.termDone': 'Flash complete: click × to close, then insert the card; first boot needs internet to install NoKeyOut.',
     'tf.cmdHint': 'The command uses --board neo3plus; select the disk, type YES, enter the password twice. First boot needs internet to install NoKeyOut.',
+    'tf.windows': 'Windows: run install-tf.ps1 -Board neo3plus as Administrator.',
     'tf.param.fetch': 'Fetch install-tf.sh to /tmp with curl',
     'tf.param.board': 'neo3plus: resolves the Armbian image',
     'tf.param.resolve': 'Resolve the image only; do not write',
@@ -862,7 +864,7 @@ let TF = null;   // { open, busy, done, token, mode, pass, board }
 
 const TF_SCRIPT_URL = 'https://nokeyout.com/tools/install-tf.sh';
 const TF_BOARD = 'neo3plus';
-const TF_ARMBIAN_IMAGE = 'Armbian_community_26.11.0-trunk.104_Nanopi-neo3-plus_trixie_current_6.18.57_minimal.img.xz';
+const TF_IMAGE_HINT = 'latest Armbian community image (resolved at run time)';
 const TF_PROMPTS = {
   shell: 'user@pc:~$',
   disk: 'Select target disk [1-1]:',
@@ -870,12 +872,6 @@ const TF_PROMPTS = {
   pass: 'Password for nokeyout:',
   confirm: 'Confirm password:',
 };
-function tfImageFile() {
-  return TF_ARMBIAN_IMAGE;
-}
-function tfImageUrl() {
-  return `https://github.com/armbian/community/releases/download/26.11.0-trunk.104/${TF_ARMBIAN_IMAGE}`;
-}
 function tfCommand() {
   return `curl -fsSL ${TF_SCRIPT_URL} -o /tmp/install-tf.sh && sudo bash /tmp/install-tf.sh --board ${TF_BOARD}`;
 }
@@ -1040,8 +1036,8 @@ function onTfSubmit(e) {
   TF.board = TF_BOARD;
   termLine('==> 1/3 Resolving board and official image', 'dim');
   termLine('  board:   neo3plus (NanoPi NEO3 Plus)', 'dim');
-  termLine(`  image:   ${tfImageUrl()}`, 'dim');
-  termLine('  version: 26.11.0-trunk.104 · minimal · support=csc', 'dim');
+  termLine(`  image:   ${TF_IMAGE_HINT}`, 'dim');
+  termLine('  variant: minimal · support: community', 'dim');
   termLine('==> 2/3 Preparing first-boot install', 'dim');
   termLine('==> 3/3 Writing card', 'dim');
   termLine('Select the target TF card (all data will be erased):', 'dim');
@@ -1135,11 +1131,11 @@ function runFakeFlash() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   (async () => {
-    termLine(`==> Image:    ${tfImageUrl()}`, 'dim');
+    termLine(`==> Image:    ${TF_IMAGE_HINT}`, 'dim');
     await wait(120); if (!alive()) return;
-    termLine(`==> Downloading ${tfImageUrl()}`, 'dim');
+    termLine('==> Downloading the resolved image', 'dim');
     await wait(200); if (!alive()) return;
-    termLine(`==> Writing /root/.cache/nokeyout-images/${tfImageFile()} -> /dev/sda`, 'dim');
+    termLine('==> Writing /root/.cache/nokeyout-images/<resolved>.img.xz -> /dev/sda', 'dim');
     await wait(150); if (!alive()) return;
 
     const prog = termLine('0 MiB / 1.8 GiB copied, 0.0 MB/s', 'dim');

@@ -50,6 +50,24 @@ Reference prices, ¥1 = $0.15.
 
 [Build one](https://nokeyout.com/diy/)
 
+Flash the card:
+
+```bash
+# Linux (root)
+sudo bash tools/install-tf.sh --board neo3plus
+```
+
+```powershell
+# Windows 10/11 (Administrator)
+powershell -ExecutionPolicy Bypass -File .\tools\install-tf.ps1 -Board neo3plus
+```
+
+With WSL2 available, the Windows script also creates the `nokeyout` user, enables SSH, and injects a one-shot first-boot installer, so NoKeyOut installs automatically on first boot (internet required). Without WSL2 it writes the Armbian image only; after the board's first login, run:
+
+```bash
+curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh
+```
+
 ## Repository
 
 | Path | Contents |

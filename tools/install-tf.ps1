@@ -1,0 +1,492 @@
+<#
+  install-tf.ps1 - resolve/download an Armbian image and write it to a TF card.
+
+  Windows 10/11 + Administrator. This script only writes the card; the NoKeyOut
+  installer runs after the board boots (see the message at the end).
+
+  Usage:
+    Get-Disk | Format-Table Number,FriendlyName,Size,BusType,IsSystem
+    .\install-tf.ps1 -Board neo3plus
+    .\install-tf.ps1 -Board neo3plus -DiskNumber 5
+    .\install-tf.ps1 -Image D:\images\armbian.img
+    .\install-tf.ps1 -Board neo3plus -NoDeploy
+
+  With WSL2 available, the image gets the `nokeyout` user, SSH, and a one-shot
+  first-boot installer before it is written. Without WSL2, -NoDeploy writes the
+  Armbian image only; install NoKeyOut after the board's first login.
+
+  Resolve only (no admin, no disk access):
+    .\install-tf.ps1 -Board neo3plus -ResolveOnly
+
+  Extract an already-downloaded image (no admin, no disk access):
+    .\install-tf.ps1 -Image D:\images\armbian.img.xz -ExtractOnly
+
+  Prepare an image without writing a disk (WSL2; no admin):
+    .\install-tf.ps1 -Image D:\images\armbian.img -PrepareOnly -KeepImage
+
+  Extraction needs one of: xz.exe, 7-Zip, Python 3, or the script can fetch
+  the standalone 7zr.exe from 7-zip.org (SHA-256 pinned below).
+  NOTE: ASCII-only on purpose - Windows PowerShell 5.1 reads BOM-less .ps1
+        as ANSI and mangles non-ASCII string literals.
+#>
+[CmdletBinding()]
+param(
+  [string]$Board = '',
+  [string]$Image = '',
+  [string]$ImageUrl = '',
+  [string]$Sha256 = '',
+  [int]$DiskNumber = -1,
+  [string]$SevenZip = '',
+  [string]$WslDistro = '',
+  [switch]$ResolveOnly,
+  [switch]$ExtractOnly,
+  [switch]$PrepareOnly,
+  [switch]$NoDeploy,
+  [switch]$Force,
+  [switch]$KeepImage
+)
+
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$ToolsBase = if ($env:NOKEYOUT_TOOLS_BASE) { $env:NOKEYOUT_TOOLS_BASE.TrimEnd('/') } else { 'https://nokeyout.com/tools' }
+$IndexUrl = if ($env:NOKEYOUT_IMAGE_INDEX) { $env:NOKEYOUT_IMAGE_INDEX } else { 'https://github.armbian.com/armbian-images.json' }
+$SevenZipUrl = 'https://www.7-zip.org/a/7zr.exe'
+$SevenZipSha = '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282'
+
+function Say([string]$msg) { Write-Host "==> $msg" }
+function Fail([string]$msg) { throw $msg }
+
+function Test-Admin {
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $p = New-Object Security.Principal.WindowsPrincipal($id)
+  return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-BoardsPath([string]$Tmp) {
+  $local = Join-Path $PSScriptRoot 'boards.json'
+  if (Test-Path -LiteralPath $local) { return $local }
+  $dst = Join-Path $Tmp 'boards.json'
+  Say "Downloading boards.json"
+  Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/boards.json" -OutFile $dst
+  return $dst
+}
+
+function Resolve-Image([string]$Tmp) {
+  if (-not $Board) { $Board = Read-Host 'Board id (e.g. neo3plus)' }
+  if (-not $Board) { Fail 'board id is required' }
+  if ($Board -notmatch '^[a-z0-9][a-z0-9._-]*$') { Fail "invalid board: $Board" }
+
+  $boardsPath = Get-BoardsPath $Tmp
+  $reg = Get-Content -LiteralPath $boardsPath -Raw | ConvertFrom-Json
+  $entryProp = $reg.boards.PSObject.Properties[$Board]
+  if (-not $entryProp) { Fail "unknown board: $Board (see boards.json)" }
+  $entry = $entryProp.Value
+  $imgProp = $reg.images.PSObject.Properties[$entry.image]
+  if (-not $imgProp) { Fail "unknown image key: $($entry.image)" }
+  $img = $imgProp.Value
+
+  $slug = if ($img.armbian) { $img.armbian } else { $Board }
+  $wantVariant = if ($img.variant) { $img.variant } else { 'minimal' }
+  $wantBranch = if ($img.branch) { $img.branch } else { 'current' }
+
+  Say "Resolving latest Armbian image for $Board"
+  $index = Invoke-RestMethod -UseBasicParsing -Uri $IndexUrl
+  $assets = @($index.assets | Where-Object { $_.board_slug -eq $slug })
+  if ($assets.Count -eq 0) { Fail "Armbian has no image for board_slug=$slug" }
+
+  $ranked = foreach ($a in $assets) {
+    $v = [version]'0.0.0'
+    if ($a.armbian_version) {
+      $clean = [regex]::Replace([string]$a.armbian_version, '[^0-9.].*$', '')
+      if ($clean) { try { $v = [version]$clean } catch { $v = [version]'0.0.0' } }
+    }
+    [pscustomobject]@{
+      Asset = $a
+      R1 = if ($a.variant -eq $wantVariant) { 0 } else { 1 }
+      R2 = if ($a.branch -eq $wantBranch) { 0 } else { 1 }
+      R3 = if ($a.variant -eq 'minimal') { 0 } else { 1 }
+      R4 = if ($a.board_support -eq 'conf') { 0 } else { 1 }
+      Ver = $v
+      Date = [string]$a.file_date
+    }
+  }
+  $best = $ranked | Sort-Object R1, R2, R3, R4, @{ Expression = { $_.Ver }; Descending = $true }, @{ Expression = { $_.Date }; Descending = $true } | Select-Object -First 1
+  $asset = $best.Asset
+  if (-not $asset.file_url) { Fail 'resolved empty image URL' }
+
+  $sha = $Sha256
+  if (-not $sha -and $asset.file_url_sha) {
+    try {
+      $resp = Invoke-WebRequest -UseBasicParsing -Uri $asset.file_url_sha
+      $txt = $resp.Content
+      if ($txt -is [byte[]]) { $txt = [Text.Encoding]::UTF8.GetString($txt) }
+      $sha = (([string]$txt).Trim() -split '\s+')[0]
+    } catch { Write-Warning "cannot fetch SHA file: $($asset.file_url_sha)" }
+  }
+
+  [pscustomobject]@{
+    Url = $asset.file_url
+    Sha256 = $sha
+    Version = $asset.armbian_version
+    Variant = $asset.variant
+    Support = $asset.board_support
+    BoardName = $asset.board_name
+  }
+}
+
+function Find-SevenZip {
+  param([string]$Explicit)
+  if ($Explicit) {
+    if (Test-Path -LiteralPath $Explicit) { return (Resolve-Path -LiteralPath $Explicit).Path }
+    Fail "7-Zip not found: $Explicit"
+  }
+  foreach ($name in @('7z.exe', '7za.exe', '7zr.exe')) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+  }
+  foreach ($p in @(
+      (Join-Path $env:ProgramFiles '7-Zip\7z.exe'),
+      (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe'),
+      (Join-Path $PSScriptRoot '7zr.exe')
+    )) {
+    if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+  }
+  return ''
+}
+
+function Find-Python {
+  foreach ($name in @('python.exe', 'python3.exe')) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd) {
+      & $cmd.Source -c "import sys; raise SystemExit(0 if sys.version_info[0] >= 3 else 1)" 2>$null
+      if ($LASTEXITCODE -eq 0) { return @{ Exe = $cmd.Source; Args = @() } }
+    }
+  }
+  $py = Get-Command py.exe -ErrorAction SilentlyContinue
+  if ($py) {
+    & $py.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info[0] >= 3 else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) { return @{ Exe = $py.Source; Args = @('-3') } }
+  }
+  return $null
+}
+
+function Find-WslDistro([string]$Preferred) {
+  $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
+  if (-not (Test-Path -LiteralPath $wsl)) { return $null }
+
+  if ($Preferred) {
+    & $wsl -d $Preferred -u root -- test -e /dev/loop0 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $Preferred } }
+    Fail "WSL distro not usable: $Preferred"
+  }
+
+  & $wsl -u root -- test -e /dev/loop0 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = '' } }
+
+  $names = & $wsl -l -q 2>$null
+  foreach ($raw in $names) {
+    $name = ([string]$raw) -replace "`0", ''
+    $name = $name.Trim()
+    if (-not $name) { continue }
+    & $wsl -d $name -u root -- test -e /dev/loop0 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $name } }
+  }
+  return $null
+}
+
+function ConvertTo-WslPath([string]$Path) {
+  $full = [IO.Path]::GetFullPath($Path)
+  if ($full -match '^([A-Za-z]):\\(.*)$') {
+    $drive = $matches[1].ToLowerInvariant()
+    $rest = $matches[2] -replace '\\', '/'
+    return "/mnt/$drive/$rest"
+  }
+  Fail "only local drive paths can be passed to WSL: $Path"
+}
+
+function Read-PlainPassword([string]$Prompt) {
+  $sec = Read-Host $Prompt -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+
+function Set-ImageFirstboot([string]$Img, [string]$Tmp) {
+  if ($NoDeploy) {
+    Write-Host 'Skipping firstboot injection (-NoDeploy).'
+    return $false
+  }
+
+  $wslInfo = Find-WslDistro $WslDistro
+  if (-not $wslInfo) {
+    Write-Warning 'WSL2 not found. Writing the Armbian image without the firstboot installer.'
+    return $false
+  }
+
+  $script = Join-Path $PSScriptRoot 'flash-tf-wsl.sh'
+  if (-not (Test-Path -LiteralPath $script)) {
+    $script = Join-Path $Tmp 'flash-tf-wsl.sh'
+    Say 'Downloading flash-tf-wsl.sh'
+    Invoke-WebRequest -UseBasicParsing -Uri "$ToolsBase/flash-tf-wsl.sh" -OutFile $script
+  }
+
+  $pw1 = Read-PlainPassword 'Password for nokeyout'
+  $pw2 = Read-PlainPassword 'Confirm password'
+  if ($pw1 -ne $pw2) { Fail 'passwords do not match' }
+  if (-not $pw1) { Fail 'empty password' }
+
+  $wslArgs = @()
+  if ($wslInfo.Distro) { $wslArgs += @('-d', $wslInfo.Distro) }
+  $wslArgs += @('-u', 'root', '--')
+
+  $hash = ($pw1 | & $wslInfo.Exe @wslArgs openssl passwd -6 -stdin).Trim()
+  $pw1 = $null
+  $pw2 = $null
+  if ($hash -notmatch '^\$6\$') { Fail 'cannot hash password via WSL openssl' }
+
+  $wslScript = ConvertTo-WslPath $script
+  $wslImg = ConvertTo-WslPath $Img
+  Say 'Injecting user, SSH and firstboot into the image (WSL2)'
+  $run = $wslArgs + @('bash', $wslScript, $wslImg, $hash, 'nokeyout', 'nokeyout')
+  & $wslInfo.Exe @run
+  if ($LASTEXITCODE -ne 0) {
+    Fail 'WSL firstboot injection failed; use -NoDeploy to write without it'
+  }
+  return $true
+}
+
+
+function Expand-Xz([string]$Src, [string]$Tmp, [string]$SevenZipPath) {
+  $seven = Find-SevenZip $SevenZipPath
+  if ($seven) {
+    Say "Extracting with $seven"
+    & $seven x -y "-o$Tmp" $Src | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "7-Zip failed with exit code $LASTEXITCODE" }
+    $img = Get-ChildItem -LiteralPath $Tmp -Filter *.img -File | Sort-Object Length -Descending | Select-Object -First 1
+    if ($img) { return $img.FullName }
+    Fail '7-Zip produced no .img file'
+  }
+
+  $py = Find-Python
+  if ($py) {
+    Say 'Extracting with Python lzma'
+    $dst = Join-Path $Tmp ([IO.Path]::GetFileNameWithoutExtension($Src))
+    $pyFile = Join-Path $Tmp 'unxz.py'
+    @'
+import lzma, shutil, sys
+with lzma.open(sys.argv[1], "rb") as src, open(sys.argv[2], "wb") as dst:
+    shutil.copyfileobj(src, dst, 1024 * 1024)
+'@ | Set-Content -LiteralPath $pyFile -Encoding ASCII
+    $pyArgs = @()
+    if ($py.Args) { $pyArgs += $py.Args }
+    $pyArgs += @($pyFile, $Src, $dst)
+    & $py.Exe @pyArgs
+    if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $dst)) { return $dst }
+    Fail "Python lzma failed with exit code $LASTEXITCODE"
+  }
+
+  Say 'Downloading standalone 7zr.exe'
+  $seven = Join-Path $Tmp '7zr.exe'
+  Invoke-WebRequest -UseBasicParsing -Uri $SevenZipUrl -OutFile $seven
+  $got = (Get-FileHash -LiteralPath $seven -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($got -ne $SevenZipSha) {
+    Fail "7zr.exe SHA-256 mismatch (got $got). Install 7-Zip or Python 3, or pass -SevenZip."
+  }
+  & $seven x -y "-o$Tmp" $Src | Out-Null
+  if ($LASTEXITCODE -ne 0) { Fail "7zr failed with exit code $LASTEXITCODE" }
+  $img = Get-ChildItem -LiteralPath $Tmp -Filter *.img -File | Sort-Object Length -Descending | Select-Object -First 1
+  if ($img) { return $img.FullName }
+  Fail '7zr produced no .img file'
+}
+
+function Expand-ImageArchive([string]$Src, [string]$Tmp, [string]$SevenZipPath) {
+  $ext = [IO.Path]::GetExtension($Src).ToLowerInvariant()
+  if ($ext -eq '.img') { return (Resolve-Path -LiteralPath $Src).Path }
+  if ($ext -eq '.xz') { return Expand-Xz $Src $Tmp $SevenZipPath }
+  if ($ext -eq '.gz') {
+    Say 'Extracting gzip'
+    $dst = Join-Path $Tmp ([IO.Path]::GetFileNameWithoutExtension($Src))
+    $in = [IO.File]::OpenRead($Src)
+    try {
+      $gz = New-Object IO.Compression.GZipStream($in, [IO.Compression.CompressionMode]::Decompress)
+      try {
+        $out = [IO.File]::Create($dst)
+        try { $gz.CopyTo($out) } finally { $out.Close() }
+      } finally { $gz.Close() }
+    } finally { $in.Close() }
+    return $dst
+  }
+  if ($ext -eq '.zip') {
+    Say 'Extracting zip'
+    Expand-Archive -LiteralPath $Src -DestinationPath $Tmp -Force
+    $img = Get-ChildItem -LiteralPath $Tmp -Filter *.img -File -Recurse | Sort-Object Length -Descending | Select-Object -First 1
+    if ($img) { return $img.FullName }
+    Fail 'zip contains no .img file'
+  }
+  Fail "unsupported image type: $ext (use .img, .img.xz, .img.gz, or .zip)"
+}
+
+function Select-TargetDisk {
+  if ($DiskNumber -ge 0) {
+    $disk = Get-Disk -Number $DiskNumber
+  } else {
+    $disks = @(Get-Disk | Where-Object {
+        $_.BusType -in @('USB', 'SD', 'MMC') -and -not $_.IsSystem -and -not $_.IsBoot
+      })
+    if ($disks.Count -eq 0) { Fail 'no removable disk found; insert the TF card reader first' }
+    Write-Host 'Select the target TF card (all data will be erased):'
+    for ($i = 0; $i -lt $disks.Count; $i++) {
+      $d = $disks[$i]
+      Write-Host ("  [{0}] Disk {1}  {2}  {3} GB  {4}" -f ($i + 1), $d.Number, $d.FriendlyName, [math]::Round($d.Size / 1GB, 2), $d.BusType)
+    }
+    $pick = Read-Host ("Select target disk [1-{0}]" -f $disks.Count)
+    if ($pick -notmatch '^\d+$') { Fail 'invalid selection' }
+    $idx = [int]$pick - 1
+    if ($idx -lt 0 -or $idx -ge $disks.Count) { Fail "invalid selection: $pick" }
+    $disk = $disks[$idx]
+  }
+
+  if ($disk.IsSystem) { Fail "refusing: disk $($disk.Number) is the system disk" }
+  if ($disk.IsBoot) { Fail "refusing: disk $($disk.Number) is the boot disk" }
+  if ($disk.BusType -notin @('USB', 'SD', 'MMC')) {
+    Fail "refusing: disk $($disk.Number) BusType=$($disk.BusType) is not removable media"
+  }
+  return $disk
+}
+
+function Write-RawImage([string]$Img, $Disk) {
+  $size = (Get-Item -LiteralPath $Img).Length
+  if ($size -gt $Disk.Size) { Fail ("image is larger than the target disk ({0:N0} > {1:N0} bytes)" -f $size, $Disk.Size) }
+
+  Write-Host ("Image  : {0} ({1:N0} bytes)" -f $Img, $size)
+  Write-Host ("Target : Disk {0}  {1}  {2} GB  Bus={3}" -f $Disk.Number, $Disk.FriendlyName, [math]::Round($Disk.Size / 1GB, 2), $Disk.BusType)
+
+  if (-not $Force) {
+    $answer = Read-Host 'This will OVERWRITE the disk. Type YES to continue'
+    if ($answer -ne 'YES') { Write-Host 'Cancelled.'; return $false }
+  }
+
+  try { Set-Disk -Number $Disk.Number -IsReadOnly $false -ErrorAction SilentlyContinue } catch { }
+  try {
+    Set-Disk -Number $Disk.Number -IsOffline $true -ErrorAction Stop
+  } catch {
+    Write-Warning "could not take disk offline: $($_.Exception.Message)"
+    Get-Partition -DiskNumber $Disk.Number -ErrorAction SilentlyContinue | ForEach-Object {
+      if ($_.DriveLetter) {
+        Remove-PartitionAccessPath -DiskNumber $Disk.Number -PartitionNumber $_.PartitionNumber -AccessPath ($_.DriveLetter + ':\') -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  $src = $null
+  $dst = $null
+  try {
+    $src = [IO.File]::OpenRead($Img)
+    $dst = New-Object IO.FileStream(
+      "\\.\PhysicalDrive$($Disk.Number)",
+      [IO.FileMode]::Open,
+      [IO.FileAccess]::Write,
+      [IO.FileShare]::None
+    )
+
+    $buf = New-Object byte[] (4 * 1MB)
+    $done = 0L
+    $next = 0
+    while (($n = $src.Read($buf, 0, $buf.Length)) -gt 0) {
+      $dst.Write($buf, 0, $n)
+      $done += $n
+      $pct = [int](100 * $done / $size)
+      if ($pct -ge $next) {
+        Write-Progress -Activity 'Writing image' -Status ("{0:N0} / {1:N0} bytes" -f $done, $size) -PercentComplete $pct
+        $next = $pct + 1
+      }
+    }
+    $dst.Flush()
+  } finally {
+    if ($dst) { $dst.Close() }
+    if ($src) { $src.Close() }
+    Write-Progress -Activity 'Writing image' -Completed
+    Set-Disk -Number $Disk.Number -IsOffline $false -ErrorAction SilentlyContinue
+  }
+  return $true
+}
+
+# ---------------------------------------------------------------------------
+
+$tmp = Join-Path $env:TEMP ('nokeyout-install-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+
+if (-not $ResolveOnly -and -not $ExtractOnly -and -not $PrepareOnly -and -not (Test-Admin)) {
+  Fail 'Administrator privileges required to write a disk'
+}
+
+try {
+  if ($Image) {
+    if (-not (Test-Path -LiteralPath $Image)) { Fail "image not found: $Image" }
+    $source = (Resolve-Path -LiteralPath $Image).Path
+  } else {
+    $resolved = Resolve-Image $tmp
+    Say ("board:   {0} ({1})" -f $Board, $resolved.BoardName)
+    Say ("image:   {0}" -f $resolved.Url)
+    Say ("version: {0} - {1} - support={2}" -f $resolved.Version, $resolved.Variant, $resolved.Support)
+    if ($resolved.Sha256) { Say ("sha256:  {0}" -f $resolved.Sha256) }
+
+    if ($ResolveOnly) { return }
+
+    $fileName = Split-Path -Leaf ([uri]$resolved.Url).AbsolutePath
+    $source = Join-Path $tmp $fileName
+    $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+    Say "Downloading $fileName"
+    if (Test-Path -LiteralPath $curl) {
+      & $curl -fL --retry 3 --retry-delay 3 -o $source $resolved.Url
+      if ($LASTEXITCODE -ne 0) { Fail "download failed with exit code $LASTEXITCODE" }
+    } else {
+      Invoke-WebRequest -UseBasicParsing -Uri $resolved.Url -OutFile $source
+    }
+
+    if ($resolved.Sha256) {
+      Say 'Verifying SHA-256'
+      $got = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($got -ne $resolved.Sha256.ToLowerInvariant()) {
+        Fail "SHA-256 mismatch (got $got)"
+      }
+    }
+  }
+
+  if ($ResolveOnly) { return }
+  if ($ExtractOnly) {
+    $img = Expand-ImageArchive $source $tmp $SevenZip
+    $dest = Join-Path (Get-Location).Path (Split-Path -Leaf $img)
+    if (Test-Path -LiteralPath $dest) { Fail "output already exists: $dest" }
+    Move-Item -LiteralPath $img -Destination $dest
+    Write-Host "Extracted: $dest"
+    return
+  }
+
+  $img = Expand-ImageArchive $source $tmp $SevenZip
+  $deployed = Set-ImageFirstboot $img $tmp
+  if ($PrepareOnly) {
+    Write-Host "Prepared: $img"
+    return
+  }
+  $disk = Select-TargetDisk
+  $ok = Write-RawImage $img $disk
+  if (-not $ok) { return }
+
+  Write-Host ''
+  Write-Host 'Done. Remove the card reader, insert the card into the board, and power on.'
+  if ($deployed) {
+    Write-Host 'First boot will create the nokeyout user and install NoKeyOut'
+    Write-Host '(the board needs internet access).'
+  } else {
+    Write-Host 'Firstboot was not injected. After the Armbian first login, run:'
+    Write-Host '  curl -fsSL https://nokeyout.com/tools/install-nokeyout.sh | sudo sh'
+  }
+} finally {
+  if ($KeepImage -or $PrepareOnly) {
+    if ($source) { Write-Host "Kept image: $source" }
+  } else {
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}

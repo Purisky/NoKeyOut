@@ -14,6 +14,7 @@ SHA=""
 DEPLOY=1
 RESOLVE_ONLY=0
 INDEX="https://github.armbian.com/armbian-images.json"
+TOOLS_BASE="${NOKEYOUT_TOOLS_BASE:-https://nokeyout.com/tools}"
 die() { echo "install-tf: $*" >&2; exit 1; }
 say() { printf '\n\033[1m== %s \033[0m\n' "$*"; }
 usage() { cat <<'EOF'
@@ -47,11 +48,15 @@ done
 command -v curl >/dev/null 2>&1 || die "curl is required"
 
 say "1/3 解析板型与官方镜像"
-[ -f "$HERE/boards.json" ] || die "missing tools/boards.json"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+BOARDS="$HERE/boards.json"
+if [ ! -f "$BOARDS" ]; then
+  BOARDS="$TMP/boards.json"
+  curl -fsSL "$TOOLS_BASE/boards.json" -o "$BOARDS" || die "cannot fetch boards.json"
+fi
 if [ -z "$IMAGE_URL" ]; then
   curl -fsSL "$INDEX" -o "$TMP/armbian.json" || die "cannot fetch Armbian image index"
-  RESOLVED="$($PYTHON - "$HERE/boards.json" "$TMP/armbian.json" "$BOARD" <<'PY'
+  RESOLVED="$($PYTHON - "$BOARDS" "$TMP/armbian.json" "$BOARD" <<'PY'
 import json, sys
 from re import sub
 boards_path, index_path, board = sys.argv[1:4]
@@ -128,6 +133,11 @@ say "3/3 写卡"
 ARGS=(--board "$BOARD" --image-url "$IMAGE_URL")
 [ -n "$SHA" ] && ARGS+=(--sha256 "$SHA")
 [ -n "$FB" ] && ARGS+=(--firstboot "$FB")
-bash "$HERE/flash-tf.sh" "${ARGS[@]}"
+FLASH="$HERE/flash-tf.sh"
+if [ ! -f "$FLASH" ]; then
+  FLASH="$TMP/flash-tf.sh"
+  curl -fsSL "$TOOLS_BASE/flash-tf.sh" -o "$FLASH" || die "cannot fetch flash-tf.sh"
+fi
+bash "$FLASH" "${ARGS[@]}"
 echo
 echo "完成。插卡启动后，firstboot 会自动运行 install-nokeyout.sh。"
