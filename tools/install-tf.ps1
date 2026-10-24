@@ -177,12 +177,12 @@ function Find-WslDistro([string]$Preferred) {
   if (-not (Test-Path -LiteralPath $wsl)) { return $null }
 
   if ($Preferred) {
-    & $wsl -d $Preferred -u root -- test -e /dev/loop0 2>$null | Out-Null
+    & $wsl -d $Preferred -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $Preferred } }
     Fail "WSL distro not usable: $Preferred"
   }
 
-  & $wsl -u root -- test -e /dev/loop0 2>$null | Out-Null
+  & $wsl -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
   if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = '' } }
 
   $names = & $wsl -l -q 2>$null
@@ -190,7 +190,7 @@ function Find-WslDistro([string]$Preferred) {
     $name = ([string]$raw) -replace "`0", ''
     $name = $name.Trim()
     if (-not $name) { continue }
-    & $wsl -d $name -u root -- test -e /dev/loop0 2>$null | Out-Null
+    & $wsl -d $name -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $name } }
   }
   return $null
@@ -472,7 +472,10 @@ $tmp = Join-Path $env:TEMP ('nokeyout-install-' + [guid]::NewGuid().ToString('N'
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
 if (-not $ResolveOnly -and -not $ExtractOnly -and -not $PrepareOnly -and -not (Test-Admin)) {
-  Fail 'Administrator privileges required to write a disk'
+  $self = if ($PSCommandPath) { $PSCommandPath } else { 'install-tf.ps1' }
+  Fail ("Administrator privileges required to write a disk.`n" +
+        "Open Windows Terminal / PowerShell as Administrator, or run:`n" +
+        "  Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$self`" -Board $Board'")
 }
 
 try {
