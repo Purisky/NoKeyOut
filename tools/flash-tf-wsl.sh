@@ -209,7 +209,8 @@ NOKEYOUT_SCREEN=1 bash "$B/install-nokeyout.sh" --offline "$B" --ip "$IP"
 if [ -x /var/lib/nokeyout/app/panel-go ] && [ -f /etc/nokeyout/panel.env ]; then
   SPI_DEV=$(ls /dev/spidev*.1 2>/dev/null | head -1 || true)
   [ -n "$SPI_DEV" ] || SPI_DEV=/dev/spidev0.1
-  [ -f "$B/firstboot.html" ] && cp "$B/firstboot.html" /var/lib/nokeyout/app/web/firstboot.html && chown nokeyout:nokeyout /var/lib/nokeyout/app/web/firstboot.html
+  rm -f /var/lib/nokeyout/app/web/firstboot.html
+  touch /var/lib/nokeyout/firstboot.done
   sed -i 's/^# SCREEN_BACKEND=.*/SCREEN_BACKEND=st7789/' /etc/nokeyout/panel.env 2>/dev/null || true
   sed -i "s#^# SCREEN_SPI=.*#SCREEN_SPI=$SPI_DEV#" /etc/nokeyout/panel.env 2>/dev/null || true
   sed -i 's/^# SCREEN_DC=.*/SCREEN_DC=128/' /etc/nokeyout/panel.env 2>/dev/null || true
