@@ -48,6 +48,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$Transcript = Join-Path ([IO.Path]::GetTempPath()) 'nokeyout-install-tf.log'
+try { Start-Transcript -Path $Transcript -Force | Out-Null } catch { }
+Write-Host "Log: $Transcript" 
 
 $ToolsBase = if ($env:NOKEYOUT_TOOLS_BASE) { $env:NOKEYOUT_TOOLS_BASE.TrimEnd('/') } else { 'https://nokeyout.com/tools' }
 $IndexUrl = if ($env:NOKEYOUT_IMAGE_INDEX) { $env:NOKEYOUT_IMAGE_INDEX } else { 'https://github.armbian.com/armbian-images.json' }
@@ -553,4 +556,5 @@ try {
   } else {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
   }
+  try { Stop-Transcript | Out-Null } catch { }
 }
