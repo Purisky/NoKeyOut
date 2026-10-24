@@ -223,6 +223,7 @@ if [ -x /var/lib/nokeyout/app/panel-go ] && [ -f /etc/nokeyout/panel.env ]; then
   grep -q '^SCREEN_RST=' /etc/nokeyout/panel.env || echo 'SCREEN_RST=140' >> /etc/nokeyout/panel.env
   grep -q '^SCREEN_MADCTL=' /etc/nokeyout/panel.env || echo 'SCREEN_MADCTL=0x70' >> /etc/nokeyout/panel.env
   grep -q '^SCREEN_INVERT=' /etc/nokeyout/panel.env || echo 'SCREEN_INVERT=1' >> /etc/nokeyout/panel.env
+  grep -q '^SCREEN_HZ=' /etc/nokeyout/panel.env || echo 'SCREEN_HZ=10000000' >> /etc/nokeyout/panel.env
   cat > /etc/udev/rules.d/50-nokeyout-screen.rules <<'UDEV'
 KERNEL=="spidev*.1", GROUP="nokeyout", MODE="0660"
 UDEV
