@@ -221,26 +221,39 @@ function Get-CachedFile([string]$Url, [string]$Sha, [string]$Name) {
   return $dst
 }
 
+function Test-WslLoop([string]$Exe, [string]$Distro) {
+  $args = @()
+  if ($Distro) { $args += @('-d', $Distro) }
+  $args += @('-u', 'root', '--', 'sh', '-c', 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }')
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Exe @args 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+  } finally {
+    $ErrorActionPreference = $old
+  }
+}
+
 function Find-WslDistro([string]$Preferred) {
   $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
   if (-not (Test-Path -LiteralPath $wsl)) { return $null }
 
   if ($Preferred) {
-    & $wsl -d $Preferred -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $Preferred } }
+    if (Test-WslLoop $wsl $Preferred) { return [pscustomobject]@{ Exe = $wsl; Distro = $Preferred } }
     Fail "WSL distro not usable: $Preferred"
   }
 
-  & $wsl -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
-  if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = '' } }
+  if (Test-WslLoop $wsl '') { return [pscustomobject]@{ Exe = $wsl; Distro = '' } }
 
-  $names = & $wsl -l -q 2>$null
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { $names = @(& $wsl -l -q 2>$null) } finally { $ErrorActionPreference = $old }
   foreach ($raw in $names) {
     $name = ([string]$raw) -replace "`0", ''
     $name = $name.Trim()
     if (-not $name) { continue }
-    & $wsl -d $name -u root -- sh -c 'command -v losetup >/dev/null 2>&1 && { test -e /dev/loop-control || test -e /dev/loop0; }' 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $wsl; Distro = $name } }
+    if (Test-WslLoop $wsl $name) { return [pscustomobject]@{ Exe = $wsl; Distro = $name } }
   }
   return $null
 }
@@ -337,7 +350,9 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp, [string]$Bundle) {
   if ($wslInfo.Distro) { $wslArgs += @('-d', $wslInfo.Distro) }
   $wslArgs += @('-u', 'root', '--')
 
-  $hash = ($pw1 | & $wslInfo.Exe @wslArgs openssl passwd -6 -stdin).Trim()
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { $hash = ($pw1 | & $wslInfo.Exe @wslArgs openssl passwd -6 -stdin 2>$null).Trim() } finally { $ErrorActionPreference = $old }
   $pw1 = $null
   $pw2 = $null
   if ($hash -notmatch '^\$6\$') { Fail 'cannot hash password via WSL openssl' }
@@ -347,8 +362,12 @@ function Set-ImageFirstboot([string]$Img, [string]$Tmp, [string]$Bundle) {
   Say 'Injecting user, SSH and firstboot into the image (WSL2)'
   $wslBundle = ConvertTo-WslPath $Bundle
   $run = $wslArgs + @('bash', $wslScript, $wslImg, $hash, 'nokeyout', 'nokeyout', $HostLang, $wslBundle)
-  & $wslInfo.Exe @run
+  $wslErr = Join-Path $Tmp 'wsl.err'
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & $wslInfo.Exe @run 2>$wslErr } finally { $ErrorActionPreference = $old }
   if ($LASTEXITCODE -ne 0) {
+    if (Test-Path -LiteralPath $wslErr) { Get-Content -LiteralPath $wslErr | Write-Host }
     Fail 'WSL firstboot injection failed; use -NoDeploy to write without it'
   }
   return $true
