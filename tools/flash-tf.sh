@@ -319,10 +319,12 @@ fi
 
 if [ -f "$SHADOW" ]; then
   if grep -q "^$USER_NAME:" "$SHADOW"; then
-    awk -F: -v u="$USER_NAME" -v h="$HASH" 'BEGIN{OFS=":"} $1==u{$2=h} {print}' "$SHADOW" > "$SHADOW.tmp"
+    TODAY=$(( $(date +%s) / 86400 ))
+    awk -F: -v u="$USER_NAME" -v h="$HASH" -v d="$TODAY" 'BEGIN{OFS=":"} $1==u{$2=h;$3=d;$7="";$8=""} {print}' "$SHADOW" > "$SHADOW.tmp"
     mv "$SHADOW.tmp" "$SHADOW"
   else
-    printf '%s:%s:19000:0:99999:7:::\n' "$USER_NAME" "$HASH" >> "$SHADOW"
+    TODAY=$(( $(date +%s) / 86400 ))
+  printf '%s:%s:%s:0:99999:7:::\n' "$USER_NAME" "$HASH" "$TODAY" >> "$SHADOW"
   fi
   chmod 640 "$SHADOW" 2>/dev/null || true
 else
@@ -354,10 +356,12 @@ if [ -f "$SSHD" ]; then
   sed -i -E 's/^[#[:space:]]*PasswordAuthentication .*/PasswordAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*PubkeyAuthentication .*/PubkeyAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*PermitRootLogin .*/PermitRootLogin no/' "$SSHD"
+  sed -i -E 's/^[#[:space:]]*KbdInteractiveAuthentication .*/KbdInteractiveAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*UsePAM .*/UsePAM yes/' "$SSHD"
   grep -q '^PasswordAuthentication yes' "$SSHD" || echo 'PasswordAuthentication yes' >> "$SSHD"
   grep -q '^PubkeyAuthentication yes' "$SSHD" || echo 'PubkeyAuthentication yes' >> "$SSHD"
   grep -q '^PermitRootLogin no' "$SSHD" || echo 'PermitRootLogin no' >> "$SSHD"
+  grep -q '^KbdInteractiveAuthentication yes' "$SSHD" || echo 'KbdInteractiveAuthentication yes' >> "$SSHD"
   grep -q '^UsePAM yes' "$SSHD" || echo 'UsePAM yes' >> "$SSHD"
 fi
 
@@ -394,6 +398,7 @@ fi
 
 install -d "$MNT/var/lib/nokeyout"
 printf '%s\n' "$LANG_CODE" > "$MNT/var/lib/nokeyout/lang"
+printf 'unlocked\n' > "$MNT/var/lib/nokeyout/switch-state"
 if [ -n "$BUNDLE" ]; then
   [ -d "$BUNDLE" ] || die "--bundle not found: $BUNDLE"
   NEED_KB="$(du -sk "$BUNDLE" | awk '{print $1}')"

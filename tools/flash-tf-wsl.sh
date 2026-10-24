@@ -81,10 +81,12 @@ else
 fi
 
 if grep -q "^$USER_NAME:" "$SHADOW"; then
-  awk -F: -v u="$USER_NAME" -v h="$HASH" 'BEGIN{OFS=":"} $1==u{$2=h} {print}' "$SHADOW" > "$SHADOW.tmp"
+  TODAY=$(( $(date +%s) / 86400 ))
+  awk -F: -v u="$USER_NAME" -v h="$HASH" -v d="$TODAY" 'BEGIN{OFS=":"} $1==u{$2=h;$3=d;$7="";$8=""} {print}' "$SHADOW" > "$SHADOW.tmp"
   mv "$SHADOW.tmp" "$SHADOW"
 else
-  printf '%s:%s:19000:0:99999:7:::\n' "$USER_NAME" "$HASH" >> "$SHADOW"
+  TODAY=$(( $(date +%s) / 86400 ))
+  printf '%s:%s:%s:0:99999:7:::\n' "$USER_NAME" "$HASH" "$TODAY" >> "$SHADOW"
 fi
 chmod 640 "$SHADOW" 2>/dev/null || true
 
@@ -111,10 +113,12 @@ if [ -f "$SSHD" ]; then
   sed -i -E 's/^[#[:space:]]*PasswordAuthentication .*/PasswordAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*PubkeyAuthentication .*/PubkeyAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*PermitRootLogin .*/PermitRootLogin no/' "$SSHD"
+  sed -i -E 's/^[#[:space:]]*KbdInteractiveAuthentication .*/KbdInteractiveAuthentication yes/' "$SSHD"
   sed -i -E 's/^[#[:space:]]*UsePAM .*/UsePAM yes/' "$SSHD"
   grep -q '^PasswordAuthentication yes' "$SSHD" || echo 'PasswordAuthentication yes' >> "$SSHD"
   grep -q '^PubkeyAuthentication yes' "$SSHD" || echo 'PubkeyAuthentication yes' >> "$SSHD"
   grep -q '^PermitRootLogin no' "$SSHD" || echo 'PermitRootLogin no' >> "$SSHD"
+  grep -q '^KbdInteractiveAuthentication yes' "$SSHD" || echo 'KbdInteractiveAuthentication yes' >> "$SSHD"
   grep -q '^UsePAM yes' "$SSHD" || echo 'UsePAM yes' >> "$SSHD"
 fi
 
@@ -137,6 +141,8 @@ set -e
 B=/var/lib/nokeyout/firstboot-bundle
 LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
 [ "$LANG" = "zh" ] || LANG="en"
+mkdir -p /var/lib/nokeyout
+[ -e /var/lib/nokeyout/switch-state ] || echo unlocked > /var/lib/nokeyout/switch-state
 
 if [ ! -f /var/lib/nokeyout/.dt-overlay-done ] && [ ! -e /dev/spidev1.1 ]; then
   mkdir -p /var/lib/nokeyout
@@ -213,6 +219,7 @@ ln -sf ../nokeyout-firstboot.service "$WANTS/nokeyout-firstboot.service"
 
 install -d "$MNT/var/lib/nokeyout"
 printf '%s\n' "$LANG_CODE" > "$MNT/var/lib/nokeyout/lang"
+printf 'unlocked\n' > "$MNT/var/lib/nokeyout/switch-state"
 if [ -n "$BUNDLE" ]; then
   case "$BUNDLE" in /*) ;; *) BUNDLE="$(wslpath -a "$BUNDLE")" ;; esac
   [ -d "$BUNDLE" ] || { echo "bundle not found: $BUNDLE" >&2; exit 1; }

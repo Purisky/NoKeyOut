@@ -188,6 +188,8 @@ set -e
 B=/var/lib/nokeyout/firstboot-bundle
 LANG="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
 [ "$LANG" = "zh" ] || LANG="en"
+mkdir -p /var/lib/nokeyout
+[ -e /var/lib/nokeyout/switch-state ] || echo unlocked > /var/lib/nokeyout/switch-state
 
 if [ ! -f /var/lib/nokeyout/.dt-overlay-done ] && [ ! -e /dev/spidev1.1 ]; then
   mkdir -p /var/lib/nokeyout
