@@ -71,7 +71,7 @@
   const ATTRS = [
     ['#hero-screen', 'aria-label', { en: 'Live 240x240 device screen', zh: '实时 240x240 设备屏' }],
     ['.topo svg', 'aria-label', { en: 'A LAN with device A running codex, device B running opencode, and a browser. Both devices use gateway keys to reach magpie on the box. magpie holds the provider keys and sends requests to the providers listed on the right. The switch in the box header gates :22 and :8443. The live 240x240 screen sits beside the diagram.', zh: '一个局域网：设备 A 运行 codex，设备 B 运行 opencode，加一个浏览器。两台设备都用网关密钥访问盒子里的 magpie；magpie 保管供应商密钥，并把请求发给右侧列出的供应商。盒子标题栏里的开关门控 :22 与 :8443。实时 240x240 小屏在图旁。' }],
-    ['#pswitch', 'aria-label', { en: 'Physical switch: off is LOCK (normal), on is ADMIN (ports open)', zh: '物理开关：关为 LOCK（正常），开为 ADMIN（端口开放）' }]
+    ['#pswitch', 'aria-label', { en: 'Physical switch: on is LOCK (normal), off is ADMIN (ports open)', zh: '物理开关：开为 LOCK（正常），关为 ADMIN（端口开放）' }]
   ];
 
   const root = document.documentElement;

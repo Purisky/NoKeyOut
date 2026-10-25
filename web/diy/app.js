@@ -23,7 +23,7 @@ const I18N = {
     'loading.tip': '进入后按顶部步骤操作',
     'load.file': '3D 场景需要本地服务：file:// 下浏览器不让读网格文件。在 site/ 目录运行 python -m http.server 8080，再打开 http://localhost:8080/',
     'load.fail': '3D 场景加载失败：',
-    'switch.on': '开关 ON（ADMIN）', 'switch.off': '开关 OFF（LOCK）',
+    'switch.on': '开关 ON（LOCK）', 'switch.off': '开关 OFF（ADMIN）',
     'switch.flip': '开关已拨到 {s}——读数会跟着变化。',
     'g.gate': '门控接线', 'g.screen': '屏幕接线',
     'g.plug': '上电与接线', 'g.final': '点亮', 'g.done': '完成',
@@ -50,7 +50,7 @@ const I18N = {
     'tf.ready': '[OK] 烧录完成',
     'check.guide': '安全项：确认无误再继续。',
     'screen.guideOff': '点击屏幕本体，把它翻到正面。',
-    'screen.guideOn': '屏幕已点亮；ON=ADMIN（显示 IP、面板地址与开放计时，超过 15 分钟会闪烁），OFF=LOCK（常规面板）。端口开放时屏幕常亮，拨回 LOCK 后可用 USR 熄屏/亮屏。',
+    'screen.guideOn': '屏幕已点亮；ON=LOCK（常规面板），OFF=ADMIN（显示 IP、面板地址与开放计时，超过 15 分钟会闪烁）。端口开放时屏幕常亮，拨回 LOCK 后可用 USR 熄屏/亮屏。',
     'screen.first': '先把屏幕翻到正面。',
     'screen.done': '完成', 'screen.flipped': '[OK] 屏幕已翻到正面', 'screen.lit': '[OK] 接电完成，屏幕启动',
     'screen.adminOn': '端口开放时不能熄屏：先拨回 LOCK。',
@@ -81,7 +81,7 @@ const I18N = {
     'loading.tip': 'Follow the steps at the top once inside',
     'load.file': 'The 3D scene needs a local server: file:// blocks mesh reads. Run python -m http.server 8080 in site/ and open http://localhost:8080/',
     'load.fail': '3D scene failed to load: ',
-    'switch.on': 'Switch ON (ADMIN)', 'switch.off': 'Switch OFF (LOCK)',
+    'switch.on': 'Switch ON (LOCK)', 'switch.off': 'Switch OFF (ADMIN)',
     'switch.flip': 'Switch is now {s} — readings follow it.',
     'g.gate': 'Gate wiring', 'g.screen': 'Screen wiring',
     'g.plug': 'Power & cabling', 'g.final': 'Power-on', 'g.done': 'Done',
@@ -108,7 +108,7 @@ const I18N = {
     'tf.ready': '[OK] Flash complete',
     'check.guide': 'Safety item: confirm before continuing.',
     'screen.guideOff': 'Click the screen itself to flip it to the front.',
-    'screen.guideOn': 'Screen is lit; ON=ADMIN (IP, panel URL and open timer, flashing after 15 min), OFF=LOCK (normal panel). The screen stays on while ports are open; USR works after flipping back to LOCK.',
+    'screen.guideOn': 'Screen is lit; ON=LOCK (normal panel), OFF=ADMIN (IP, panel URL and open timer, flashing after 15 min). The screen stays on while ports are open; USR works after flipping back to LOCK.',
     'screen.first': 'Flip the screen to the front first.',
     'screen.done': 'Done', 'screen.flipped': '[OK] Screen flipped', 'screen.lit': '[OK] Powered on; screen booted',
     'screen.adminOn': 'Ports are open: flip back to LOCK before turning the screen off.',
@@ -250,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPlan();
   bindChrome();
   S = loadState();
-  ADMIN_AT = S.sw ? Date.now() : 0;
+  ADMIN_AT = S.sw ? 0 : Date.now();
   applyLangChrome();
   render();
   bootScene();
@@ -299,7 +299,7 @@ function buildPlan() {
 /* ============ 状态 / 存档 ============ */
 const TF_DEFAULT_USER = 'nokeyout';
 function newState() {
-  return { idx: 0, wires: [], plugs: {}, sw: false, screenFlipped: false, screenOn: false, screenLit: false, pick: null, fails: {}, completeDismissed: false, tf: { flashed: false } };
+  return { idx: 0, wires: [], plugs: {}, sw: true, screenFlipped: false, screenOn: false, screenLit: false, pick: null, fails: {}, completeDismissed: false, tf: { flashed: false } }; // sw=true = ON = LOCK（设备出厂静止态）
 }
 function applySideEffect(s, c) {
   if (!c) return;
@@ -801,7 +801,7 @@ function onScenePick(raw) {
 }
 
 function screenPageFor() {
-  if (S.sw) return 'admin';    // 闭合 = ADMIN：显示 IP，Web 可访问
+  if (!S.sw) return 'admin';   // OFF（闭合）= ADMIN：显示 IP，Web 可访问
   return 'nokey';              // 断路 = LOCK：常规面板（未配置供应商时是空数据页）
 }
 
@@ -834,7 +834,7 @@ function flipScreen() {
 
 function toggleScreenPower() {
   if (!S || !S.screenFlipped || !S.screenOn) { toast(t('screen.first')); return; }
-  if (S.sw) { toast(t('screen.adminOn'), 'bad'); return; } /* 端口开放：屏幕必须常亮 */
+  if (!S.sw) { toast(t('screen.adminOn'), 'bad'); return; } /* 端口开放：屏幕必须常亮 */
   sfx('click');
   S.screenLit = !S.screenLit;
   saveState();
@@ -846,16 +846,16 @@ function toggleScreenPower() {
 function toggleSwitch() {
   sfx('switch');
   S.sw = !S.sw;
-  if (S.sw) {
+  if (S.sw) {           /* ON（断路）= LOCK */
+    ADMIN_AT = 0;
+  } else {              /* OFF（闭合）= ADMIN */
     ADMIN_AT = Date.now();
     if (S.screenOn) S.screenLit = true; /* 端口开放：不允许熄屏（含原本熄灭的屏） */
-  } else {
-    ADMIN_AT = 0;
   }
   saveState();
   if (window.NKBOARD3D && sceneMounted) NKBOARD3D.setSwitchState(S.sw);
   if (S.screenFlipped) refreshScreen();
-  if (S.sw && S.screenOn) toast(t('screen.adminKeep'));
+  if (!S.sw && S.screenOn) toast(t('screen.adminKeep'));
   else toast(fmt(t('switch.flip'), { s: S.sw ? 'ON' : 'OFF' }));
 }
 
@@ -1568,7 +1568,7 @@ function resetAll() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
   closeTfTerminal();
   S = newState();
-  ADMIN_AT = 0; /* 默认开关 OFF（断路）= LOCK */
+  ADMIN_AT = S.sw ? 0 : Date.now(); /* 默认 ON（断路）= LOCK */
   document.getElementById('complete').hidden = true;
   document.getElementById('step-card').hidden = false;
   const drawer = document.getElementById('step-drawer');

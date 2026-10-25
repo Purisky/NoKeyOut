@@ -270,9 +270,9 @@ try {
   const sw1 = await cdp.eval(`window.NKView3D.switchVisual()`);
   await cdp.pick('sw:toggle');
   const sw2 = await cdp.eval(`window.NKView3D.switchVisual()`);
-  ok('S4g 滑块在原始位（ON）与镜像位（OFF）之间移动',
-    sw0 && sw1 && sw2 && !sw0.on && sw1.on && !sw2.on &&
-      Math.abs(sw1.x - sw1.base) < 0.05 &&
+  ok('S4g 滑块在 ON 位与镜像位（OFF）之间移动',
+    sw0 && sw1 && sw2 && sw0.on && !sw1.on && sw2.on &&
+      Math.abs(sw0.x - sw0.base) < 0.05 &&
       Math.abs((sw0.x + sw1.x) / 2 - sw0.axis) < 0.05 &&
       Math.abs(sw1.x - sw0.x) > 0.3 &&
       Math.abs(sw2.x - sw0.x) < 0.05,
@@ -484,7 +484,7 @@ try {
   await cdp.waitFor(`window.NKView3D.screenDebug().visible`, 3000);
   const sc1 = await cdp.eval(`({ pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
   const camScreen1 = await cdp.eval(`window.NKView3D.debug().cam`);
-  ok('S6e 翻屏后点亮：OFF（断路）=LOCK 显示常规页', sc1.pose === 'over' && sc1.dbg.visible === true &&
+  ok('S6e 翻屏后点亮：ON（断路）=LOCK 显示常规页', sc1.pose === 'over' && sc1.dbg.visible === true &&
     sc1.dbg.source === 'nokey', JSON.stringify(sc1));
   ok('S6e2 翻屏时镜头正对屏幕并纳入整板', JSON.stringify(camScreen0) !== JSON.stringify(camScreen1) &&
     Math.abs(camScreen1.pitch - 88) < 0.5 && Math.abs(camScreen1.target[2] - 124) < 0.5 &&
@@ -521,7 +521,7 @@ try {
   await cdp.waitFor(`window.NKView3D.screenDebug().lang === 'en'`, 3000);
   const texEn = await cdp.eval(`window.NKView3D.screenDebug()`);
   ok('S6e2e 屏幕语言跟随游戏语言（切换对应页面资源）',
-    texEn.lang === 'en' && texEn.wasmPage !== texZh && /:en$/.test(texEn.wasmPage),
+    texEn.lang === 'en' && texEn.source === 'nokey' && texEn.wasmPage !== texZh && /:en$/.test(texEn.wasmPage),
     JSON.stringify({ before: texZh, after: texEn.wasmPage, lang: texEn.lang }));
   await cdp.click('#lang-toggle');
   await cdp.waitFor(`window.NKView3D.screenDebug().lang === 'zh'`, 3000);
@@ -572,11 +572,11 @@ try {
   ok('S6e5 USR 再按亮屏、完成按钮恢复', onScreen.visible === true && doneOn === false, JSON.stringify({ onScreen, doneOn }));
   await cdp.pick('sw:toggle');
   const scAdmin = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
-  ok('S6e6 ON（闭合）=ADMIN 显示 IP 页',
-    scAdmin.st.sw === true && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
+  ok('S6e6 OFF（闭合）=ADMIN 显示 IP 页',
+    scAdmin.st.sw === false && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
   await cdp.pick('sw:toggle');
   const scNoKey = await cdp.eval(`window.NKView3D.screenDebug()`);
-  ok('S6e6d OFF（断路）=LOCK + 无密钥 → 提示切 ADMIN 配置供应商', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
+  ok('S6e6d ON（断路）=LOCK 显示常规页', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
 
   await cdp.click('#screen-done');
   await cdp.waitFor(`!document.getElementById('complete').hidden`, 5000);
@@ -599,7 +599,7 @@ try {
   ok('S6i 重载后恢复到完成状态', (await cdp.state()).idx === 14);
   await cdp.waitFor(`window.NKView3D && window.NKView3D.switchVisual()`, 30000);
   const swAfter = await cdp.eval(`window.NKView3D.switchVisual()`);
-  ok('S6j 重载后开关模型仍在 OFF 位', swAfter && swAfter.on === false, JSON.stringify(swAfter));
+  ok('S6j 重载后开关模型仍在 ON 位（LOCK）', swAfter && swAfter.on === true, JSON.stringify(swAfter));
   await cdp.waitFor(`window.NKView3D.screenDebug && window.NKView3D.screenDebug().visible`, 30000);
   const scAfter = await cdp.eval(`({ pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
   ok('S6k 重载后屏幕仍在正面且点亮', scAfter.pose === 'over' && scAfter.dbg.visible === true, JSON.stringify(scAfter));

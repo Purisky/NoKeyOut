@@ -38,7 +38,7 @@ window.registerLevel({
       dont: { zh: "认准 Plus：别买成无排针的 NEO3 基础版", en: "Make sure it is the Plus — not the headerless base NEO3." } },
     { id: "sw", qty: 1,
       spec: { zh: "拨动开关，锁存 2 档，**推荐带 10k 上拉的开关模块**（2.54 排针）；裸开关也行（改用 SoC 内部上拉）", en: "Latching 2-position toggle; a module WITH 10k pull-up (2.54mm header) is preferred; a bare switch also works (using the SoC's internal pull-up)" },
-      why: { zh: "断路 = 内部/外置上拉把它拉高 = LOCKED；闭合 = 把 GPIO4_A5 短到 GND = ADMIN。拔线/断线同样落在 LOCKED（失效锁定）。引脚读失败时 switchd 保持上一次状态", en: "Open = pulled HIGH by the internal/external pull-up = LOCKED; closed = shorts GPIO4_A5 to GND = ADMIN. A pulled or broken wire also fails to LOCKED. On a pin read failure switchd keeps the last state." },
+      why: { zh: "断路（开关 ON）= 内部/外置上拉把它拉高 = LOCKED；闭合（开关 OFF）= 把 GPIO4_A5 短到 GND = ADMIN。拔线/断线同样落在 LOCKED（失效锁定）。引脚读失败时 switchd 保持上一次状态", en: "Open (switch ON) = pulled HIGH by the internal/external pull-up = LOCKED; closed (switch OFF) = shorts GPIO4_A5 to GND = ADMIN. A pulled or broken wire also fails to LOCKED. On a pin read failure switchd keeps the last state." },
       channel: { zh: "通用电子元件渠道", en: "General electronics supplier" },
       dont: { zh: "别买内置**下拉**的模块（常为低电平）→ 恒 ADMIN（管理面永远开着），比不装更危险；别买带 LED 的模块", en: "Do NOT buy pull-DOWN modules (held low) — permanently ADMIN (panel always open), worse than no switch; no LED modules." } },
     { id: "wires", qty: 2,
