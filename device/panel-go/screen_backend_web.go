@@ -24,6 +24,8 @@ import (
 	"image/png"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -216,7 +218,7 @@ func (p *panel) screenHandlers(w http.ResponseWriter, r *http.Request, path stri
 }
 
 func screenPageHTML() string {
-	return `<!DOCTYPE html>
+	page := `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -231,9 +233,9 @@ func screenPageHTML() string {
   .frame { border: 1px solid #2c3848; border-radius: 8px; overflow: hidden; line-height: 0; }
   canvas { display: block; image-rendering: pixelated; background: #081010; }
   /* 大图 2× 放大：看细节（整数倍放大，不糊） */
-  #big { width: 480px; height: 480px; }
+  #big { width: {{W2}}px; height: {{H2}}px; }
   /* 小图 1× = 240×240 CSS px：屏上的真实尺寸，用来看实际视觉效果与信息密度 */
-  #small { width: 240px; height: 240px; }
+  #small { width: {{W}}px; height: {{H}}px; }
   .cap { color: #8a97a8; font-size: 12px; }
   .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
   button { font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer;
@@ -251,13 +253,13 @@ func screenPageHTML() string {
       <button onclick="ctl('error')">注入统计异常</button>
       <button onclick="ctl('lock')">模拟锁定(仅画面)</button>
     </div>
-    <div class="frame"><canvas id="big" width="240" height="240"></canvas></div>
+    <div class="frame"><canvas id="big" width="{{W}}" height="{{H}}"></canvas></div>
     <div class="cap">2× 放大 · 看细节（与屏渲染线程同一份帧，WebSocket 原始 RGB565，零编解码）</div>
     <div class="cap muted" id="st">…</div>
   </div>
   <div class="col">
-    <div class="cap">真实尺寸 240×240</div>
-    <div class="frame"><canvas id="small" width="240" height="240"></canvas></div>
+    <div class="cap">真实尺寸 {{W}}×{{H}}</div>
+    <div class="frame"><canvas id="small" width="{{W}}" height="{{H}}"></canvas></div>
     <div class="cap">这个方块就是设备屏上的实际大小 · 模块选择在 管理面 → 系统 → 屏幕模块</div>
   </div>
 </div>
@@ -276,7 +278,7 @@ setInterval(tick, 1000); tick();
 (function ws() {
   const big = document.getElementById('big').getContext('2d');
   const small = document.getElementById('small').getContext('2d');
-  const img = big.createImageData(240, 240), d = img.data;
+  const img = big.createImageData({{W}}, {{H}}), d = img.data;
   // 5/6 位 → 8 位按 255/31、255/63 精确展开（<<3 会偏暗，看不出真实观感）
   const e5 = new Uint8Array(32), e6 = new Uint8Array(64);
   for (let i = 0; i < 32; i++) e5[i] = Math.round(i * 255 / 31);
@@ -287,9 +289,9 @@ setInterval(tick, 1000); tick();
     s.binaryType = 'arraybuffer';
     s.onmessage = ev => {
       const u8 = new Uint8Array(ev.data);
-      if (u8.length < 115200) return;
+      if (u8.length < {{BYTES}}) return;
       let o = 0;
-      for (let i = 0; i < 240 * 240; i++) {
+      for (let i = 0; i < {{W}} * {{H}}; i++) {
         const v = (u8[o] << 8) | u8[o + 1]; o += 2;
         d[i * 4]     = e5[(v >> 11) & 0x1F];
         d[i * 4 + 1] = e6[(v >> 5) & 0x3F];
@@ -312,4 +314,11 @@ async function ctl(action) {
 </script>
 </body>
 </html>`
+	return strings.NewReplacer(
+		"{{W}}", strconv.Itoa(screenW),
+		"{{H}}", strconv.Itoa(screenH),
+		"{{W2}}", strconv.Itoa(screenW*2),
+		"{{H2}}", strconv.Itoa(screenH*2),
+		"{{BYTES}}", strconv.Itoa(screenW*screenH*2),
+	).Replace(page)
 }

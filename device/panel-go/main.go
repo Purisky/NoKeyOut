@@ -87,6 +87,7 @@ type cfg struct {
 	screenXOff     int
 	screenYOff     int
 	screenInvert   bool
+	screenCfg      screenCfg // 面板尺寸/方向（screen.json > 环境变量）
 	screenSelfTest bool
 	screenGate     string // 上电门文件（存在前屏幕熄闭）；空=不设门
 	screenBL       int    // 背光 GPIO（全局号）；-1=不控
@@ -153,6 +154,12 @@ func loadCfg() *cfg {
 	c.screenYOff = cfgInt("SCREEN_YOFF", "0")
 	c.screenInvert = cfgGet("SCREEN_INVERT", "1") != "0"
 	c.screenSelfTest = cfgGet("SCREEN_SELFTEST", "") == "1"
+	// 面板尺寸与方向：screen.json（管理面可写）覆盖环境默认值；逻辑尺寸在这里发布
+	c.screenCfg = loadScreenCfg()
+	setScreenGeometry(c.screenCfg)
+	if c.screenCfg.Invert != nil {
+		c.screenInvert = *c.screenCfg.Invert
+	}
 	// 上电门：门文件存在前，硬件屏保持睡眠/熄背光，不渲染。
 	// 空 = 不设门（默认）；文件一旦存在即放行，删除即重新熄屏。
 	c.screenGate = cfgGet("SCREEN_GATE_FILE", "/var/lib/nokeyout/state/screen.gate")

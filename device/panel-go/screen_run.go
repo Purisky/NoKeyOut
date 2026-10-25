@@ -46,9 +46,10 @@ func (p *panel) startScreen() {
 	}()
 }
 
-func (p *panel) screenLoop(backend string) {
-	var dev screenDev
-	var label string
+// buildScreenDev：按 backend 建一次设备（上电门 / 自检 / 打不开时退 console）。
+// 返回 (dev, label, ok)。方向或面板尺寸变更后由渲染线程重新调用。
+func (p *panel) buildScreenDev(backend string) (screenDev, string, bool) {
+	p.screen = nil
 	switch backend {
 	case "st7789":
 		if p.cfg.screenGate != "" {
@@ -61,32 +62,41 @@ func (p *panel) screenLoop(backend string) {
 		if err != nil {
 			// 硬件打不开 → 退回 console：屏幕上没有，但日志里有（服务不坠落）
 			log.Printf("screen: 打不开 ST7789（%v）→ 退回 console 输出", err)
-			backend, dev, label = "console", nil, "console(fallback)"
-		} else {
-			dev, label = st, "st7789"
-			if p.cfg.screenSelfTest {
-				log.Printf("screen: 自检（四色块：红/绿/蓝/白）…")
-				if err := st.selftest(); err != nil {
-					log.Printf("screen: 自检失败：%v", err)
-				} else {
-					log.Printf("screen: 自检完成。若花屏，调整 madctl/偏移/invert")
-				}
+			return nil, "console(fallback)", true
+		}
+		if p.cfg.screenSelfTest {
+			log.Printf("screen: 自检（四色块：红/绿/蓝/白）…")
+			if err := st.selftest(); err != nil {
+				log.Printf("screen: 自检失败：%v", err)
+			} else {
+				log.Printf("screen: 自检完成。若花屏，调整 madctl/偏移/invert")
 			}
 		}
+		return st, "st7789", true
 	case "png":
 		pd := newShadowScreen(p.cfg.screenPngDir, p.cfg.screenPngScale)
-		dev, label, p.screen = pd, "png→"+pd.dir, pd
+		p.screen = pd
+		return pd, "png→" + pd.dir, true
 	case "web":
 		sc := newShadowScreen(p.cfg.screenPngDir, p.cfg.screenPngScale) // dir 可空：只 HTTP 不落盘
-		dev, label, p.screen = sc, "web(/screen)", sc
+		p.screen = sc
+		return sc, "web(/screen)", true
 	case "console":
-		label = "console"
-	default:
-		log.Printf("screen: 未知后端 %q（支持 console|st7789|png|web）", backend)
+		return nil, "console", true
+	}
+	log.Printf("screen: 未知后端 %q（支持 console|st7789|png|web）", backend)
+	return nil, backend, false
+}
+
+func (p *panel) screenLoop(backend string) {
+	dev, label, ok := p.buildScreenDev(backend)
+	if !ok {
 		return
 	}
-	log.Printf("screen: 后端 %s 启动（SPI=%s DC=%d RST=%d madctl=0x%02X）",
-		label, p.cfg.screenSPI, p.cfg.screenDC, p.cfg.screenRST, p.cfg.screenMADCTL)
+	madctl := p.cfg.screenCfg.madctl(p.cfg.screenMADCTL)
+	log.Printf("screen: 后端 %s 启动（SPI=%s DC=%d RST=%d %dx%d rot=%d madctl=0x%02X）",
+		label, p.cfg.screenSPI, p.cfg.screenDC, p.cfg.screenRST,
+		screenW, screenH, p.cfg.screenCfg.Rotation, madctl)
 
 	canvas := newCanvas(screenW, screenH)
 	scratch := newCanvas(screenW, screenH)
@@ -95,7 +105,28 @@ func (p *panel) screenLoop(backend string) {
 	ring := -1.0             // 圆环扫掠当前值（-1=未初始化）
 	powerOn := dev != nil    // 首帧也走一次 CRT 开机动画（物理屏 RAM 不可信）
 	startedAt := time.Now()
+	ver := screenCfgVer.Load()
 	for {
+		// 面板尺寸/方向变了：关旧设备、按新几何重建画布与驱动（实时生效，不重启进程）。
+		if v := screenCfgVer.Load(); v != ver {
+			ver = v
+			if c, okc := dev.(interface{ close() }); okc && dev != nil {
+				c.close()
+			}
+			dev, label, ok = p.buildScreenDev(backend)
+			if !ok {
+				return
+			}
+			log.Printf("screen: 配置变更 → %s（%dx%d rot=%d madctl=0x%02X）", label,
+				screenW, screenH, p.cfg.screenCfg.Rotation, p.cfg.screenCfg.madctl(p.cfg.screenMADCTL))
+			canvas = newCanvas(screenW, screenH)
+			scratch = newCanvas(screenW, screenH)
+			hist = newHistory()
+			p.screenHist.Store(hist)
+			ring = -1.0
+			powerOn = dev != nil
+			startedAt = time.Now()
+		}
 		// 规则：管理面端口开放期间不允许熄屏。若熄屏发生在端口打开之前，
 		// 端口一开放就强制亮屏（USER/Web 之后也无法再熄屏，见 setScreenOff）。
 		if p.screenOff.Load() && p.portOpen() {
@@ -218,7 +249,9 @@ func (p *panel) openScreenHW() (*st7789, error) {
 		}
 		rstpin = rst
 	}
-	st := newST7789(spi, dc, rstpin, p.cfg.screenMADCTL, p.cfg.screenXOff, p.cfg.screenYOff, p.cfg.screenInvert)
+	madctl := p.cfg.screenCfg.madctl(p.cfg.screenMADCTL)
+	xoff, yoff := p.cfg.screenCfg.offsets(p.cfg.screenXOff, p.cfg.screenYOff)
+	st := newST7789(spi, dc, rstpin, int(madctl), xoff, yoff, p.cfg.screenInvert)
 	st.init()
 	return st, nil
 }

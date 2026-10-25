@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -143,3 +144,58 @@ func canvasPNG(c *Canvas, scale int) []byte {
 	return buf.Bytes()
 }
 
+
+// screenCfgHandler：物理屏尺寸与方向（GET 读 / POST 写）。
+//   GET  → {panelW,panelH,rotation,logicalW,logicalH,backend,madctl,presets}
+//   POST {"panelW":240,"panelH":320,"rotation":0} → 校验、落盘、实时重建渲染线程
+func (p *panel) screenCfgHandler(w http.ResponseWriter, r *http.Request) {
+	if p.user(r) == "" {
+		p.errJSON(w, r, 401, "no session")
+		return
+	}
+	view := func(c screenCfg) map[string]any {
+		lw, lh := c.logical()
+		return map[string]any{
+			"panelW": c.PanelW, "panelH": c.PanelH, "rotation": c.Rotation,
+			"logicalW": lw, "logicalH": lh,
+			"backend": p.cfg.screenBackend,
+			"madctl":  fmt.Sprintf("0x%02X", c.madctl(p.cfg.screenMADCTL)),
+			"presets": []map[string]any{
+				{"w": 240, "h": 240, "label": "240×240"},
+				{"w": 240, "h": 320, "label": "240×320"},
+			},
+		}
+	}
+	switch r.Method {
+	case http.MethodGet:
+		p.json(w, r, 200, view(p.cfg.screenCfg), nil)
+	case http.MethodPost:
+		var body struct {
+			PanelW   int `json:"panelW"`
+			PanelH   int `json:"panelH"`
+			Rotation int `json:"rotation"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil {
+			p.errJSON(w, r, 400, "请求体不是合法 JSON")
+			return
+		}
+		c := screenCfg{PanelW: body.PanelW, PanelH: body.PanelH, Rotation: body.Rotation}
+		if err := c.validate(); err != nil {
+			p.errJSON(w, r, 400, err.Error())
+			return
+		}
+		if err := saveScreenCfg(c); err != nil {
+			p.errJSON(w, r, 500, "写入配置失败："+err.Error())
+			return
+		}
+		p.cfg.screenCfg = c
+		setScreenGeometry(c)
+		screenCfgVer.Add(1) // 渲染线程下一拍重建画布与驱动
+		lw, lh := c.logical()
+		log.Printf("screen: 面板 %d×%d rot=%d → 逻辑 %d×%d（madctl=0x%02X）",
+			c.PanelW, c.PanelH, c.Rotation, lw, lh, c.madctl(p.cfg.screenMADCTL))
+		p.json(w, r, 200, view(c), nil)
+	default:
+		p.errJSON(w, r, 405, "只支持 GET / POST")
+	}
+}

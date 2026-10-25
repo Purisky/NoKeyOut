@@ -11,9 +11,14 @@ import (
 	"sync"
 )
 
+// screenW/screenH：UI 逻辑画布尺寸，由 screen_cfg.go 在启动时按
+// 「面板尺寸 + 方向」发布（240×240 默认；240×320 面板支持 0/90/180/270）。
+var (
+	screenW = 240
+	screenH = 240
+)
+
 const (
-	screenW      = 240
-	screenH      = 240
 	screenHeadH  = 22 // 页头：设备状态 + 时钟
 	screenFootH  = 16 // 页脚：页点 + 页名 + 数据新鲜度
 	screenMX     = 4  // 页边距（4px gutter）

@@ -198,6 +198,7 @@
     <button data-tab="home" class="on">主页</button>
     <button data-tab="models">模型配置</button>
     <button data-tab="magpie">magpie</button>
+    <button data-tab="screen">屏幕</button>
     <button data-tab="system">系统</button>
   </nav>
   <span style="width:8px"></span>
@@ -332,9 +333,32 @@
       <div class="muted" style="margin-top:8px">签名只约束这个官方更新按钮；自行修改的 NoKeyOut 可直接替换二进制，或用
         <code>nokeyout-upgrade nk-deploy &lt;本地 tarball&gt;</code> 离线安装。设备没有安全启动/硬件锁定。</div>
     </section>
+  </div>
+  <div class="tabpane" data-pane="screen" style="display:none">
+    <section class="panel">
+      <h2>物理屏</h2>
+      <div class="muted">面板尺寸与显示方向。改完立即重建渲染线程（画布尺寸、MADCTL 与窗口偏移一起换）。</div>
+      <div class="row" style="margin-top:8px">
+        <span class="muted">面板</span>
+        <select id="scrpanel" style="width:150px">
+          <option value="240x240">240×240</option>
+          <option value="240x320">240×320</option>
+        </select>
+        <span class="muted">方向</span>
+        <select id="scrrot" style="width:110px">
+          <option value="0">0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+        <button class="primary" id="scrcfgsave">保存并应用</button>
+        <span id="scrcfgmsg" class="muted"></span>
+      </div>
+      <div class="muted" id="scrcfginfo" style="margin-top:6px">—</div>
+    </section>
     <section class="panel">
       <h2>屏幕模块</h2>
-      <div class="muted">小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤ 240px」是唯一约束</div>
+      <div class="muted">小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤ <span id="scrbudgeth">240</span>px」是唯一约束</div>
       <div id="scrrows" style="margin-top:6px"></div>
 
       <!-- 预算条：已用槽高 / 屏高（超预算变红，和错误提示同步） -->
@@ -367,7 +391,7 @@
       </div>
 
       <div class="scrprevwrap" style="margin-top:10px">
-        <div class="muted">设备屏 240×240 · 实时数据</div>
+        <div class="muted" id="scrprevcap">设备屏 240×240 · 实时数据</div>
         <img id="scrprev" alt="" width="240" height="240"
              style="width:240px;height:240px;image-rendering:pixelated;
                     background:#000;border:1px solid var(--border,#8886);border-radius:8px">
@@ -380,6 +404,8 @@
         <span id="scrmsg" class="muted"></span>
       </div>
     </section>
+  </div>
+  <div class="tabpane" data-pane="system" style="display:none">
     <section class="panel">
       <h2>用户按键</h2>
       <div class="muted">板上 USER 键的默认动作是熄屏 / 亮屏；端口开放（ADMIN）期间屏幕强制常亮，拨回 LOCK 后才能熄屏。动作映射保存在设备上，屏幕开关状态只影响本次运行。</div>
@@ -595,7 +621,8 @@ function showTab(t) {
   document.querySelectorAll('.tabpane').forEach(p => p.style.display = p.dataset.pane === t ? '' : 'none');
   document.body.classList.toggle('magpie-open', t === 'magpie');
   if (t === 'magpie' && !consoleLoaded) { consoleLoaded = true; $('#console').src = '/console/'; }
-  if (t === 'system') { sysinfo(); nkuStatus(); bklist(); screenLoad(); btnLoad(); }
+  if (t === 'screen') { screenLoad(); scrCfgLoad(); }
+  if (t === 'system') { sysinfo(); nkuStatus(); bklist(); btnLoad(); }
   if (t === 'models') { models(); keyring(); if (!AGENTS.length) loadAgents(); }
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -1213,6 +1240,12 @@ NK.I18N['超出 '] = 'Over by ';
 NK.I18N['有重复模块：'] = 'Duplicate module: ';
 NK.I18N['已保存'] = 'Saved';
 NK.I18N['保存失败'] = 'save failed';
+NK.I18N['后端'] = 'Backend';
+NK.I18N['未启用'] = 'disabled';
+NK.I18N['逻辑画布'] = 'logical canvas';
+NK.I18N['设备屏 '] = 'Device screen ';
+NK.I18N[' · 实时数据'] = ' · live data';
+NK.I18N['已应用'] = 'applied';
 NK.I18N['自定义模块'] = 'Custom modules';
 NK.I18N[' 元素'] = ' elements';
 NK.I18N['编辑'] = 'Edit';
@@ -1339,6 +1372,45 @@ function scrModMove(i, d) {
   scrModsRender();
   screenUpdate();
 }
+
+// ---- 物理屏尺寸 / 方向（GET/POST /api/screen/config）
+function scrCfgInfo(j) {
+  const el = $('#scrcfginfo');
+  if (el) el.textContent = NK.t('后端') + ' ' + (j.backend || NK.t('未启用')) +
+    ' · ' + NK.t('逻辑画布') + ' ' + j.logicalW + '×' + j.logicalH + ' · MADCTL ' + (j.madctl || '—');
+  const img = $('#scrprev');
+  if (img && j.logicalW) {
+    img.width = j.logicalW; img.height = j.logicalH;
+    img.style.width = j.logicalW + 'px'; img.style.height = j.logicalH + 'px';
+  }
+  const cap = $('#scrprevcap');
+  if (cap) cap.textContent = NK.t('设备屏 ') + j.logicalW + '×' + j.logicalH + NK.t(' · 实时数据');
+  const bh = $('#scrbudgeth');
+  if (bh) bh.textContent = j.logicalH;
+}
+async function scrCfgLoad() {
+  try {
+    const j = await (await fetch('/api/screen/config')).json();
+    const p = $('#scrpanel'), r = $('#scrrot');
+    if (p) p.value = j.panelW + 'x' + j.panelH;
+    if (r) r.value = String(j.rotation);
+    scrCfgInfo(j);
+  } catch (e) { scrCfgInfo({ logicalW: 240, logicalH: 240 }); }
+}
+$('#scrcfgsave').onclick = async () => {
+  const [w, h] = ($('#scrpanel').value || '240x240').split('x').map(Number);
+  const body = { panelW: w, panelH: h, rotation: Number($('#scrrot').value) || 0 };
+  $('#scrcfgmsg').textContent = '';
+  try {
+    const r = await fetch('/api/screen/config', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!r.ok) { $('#scrcfgmsg').textContent = j.error || NK.t('保存失败'); return; }
+    $('#scrcfgmsg').textContent = NK.t('已应用');
+    scrCfgInfo(j);
+    screenLoad(); // 预算与预览尺寸跟着新画布走
+  } catch (e) { $('#scrcfgmsg').textContent = NK.t('保存失败'); }
+};
 
 async function screenLoad() {
   const box = $('#scrrows');

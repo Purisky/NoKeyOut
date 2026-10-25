@@ -24,6 +24,10 @@ func (p *panel) route(w http.ResponseWriter, r *http.Request) {
 		p.screenModules(w, r)
 		return
 	}
+	if path == "/api/screen/config" {
+		p.screenCfgHandler(w, r)
+		return
+	}
 	if path == "/api/screen/preview" {
 		p.screenPreview(w, r)
 		return

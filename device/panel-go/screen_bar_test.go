@@ -756,7 +756,7 @@ func TestUsageHistSeries(t *testing.T) {
 	h.slots[since.Add(23*time.Hour).Unix()/histSlotSec] = histSlot{tok: 30} // 96%
 	h.slots[since.Add(-2*time.Hour).Unix()/histSlotSec] = histSlot{tok: 99} // 周期外
 
-	const n = screenW - 16
+	n := screenW - 16
 	v := h.series(since, 24*time.Hour, n)
 	if len(v) != n {
 		t.Fatalf("桶数应为 %d，got %d", n, len(v))

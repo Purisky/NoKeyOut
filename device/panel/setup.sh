@@ -228,6 +228,12 @@ NOKEYOUT_SWITCH_LINE=5
 # SCREEN_MADCTL=0x70
 # SCREEN_INVERT=1
 # SCREEN_SELFTEST=1
+# 面板尺寸与方向：出厂默认；管理面 → 屏幕 保存的值写入 SCREEN_CFG_FILE 并覆盖这里。
+# 240×320 面板选 240x320；旋转 90/270 时逻辑画布自动变 320×240。
+SCREEN_PANEL_W=240
+SCREEN_PANEL_H=240
+SCREEN_ROTATION=0
+SCREEN_CFG_FILE=/var/lib/nokeyout/state/screen.json
 # 用户自定义屏页（JSON 描述符；损坏自动跳过，不影响内置三页）
 SCREENS_DIR=/var/lib/nokeyout/screens
 # USER 按键（板载 K2_USR = GPIO4_B2 = 138；按下短接到 GND）。
