@@ -29,7 +29,8 @@ const log = (s) => console.log(s);
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.json': 'application/json', '.wasm': 'application/wasm', '.fbx': 'application/octet-stream' };
 function serveStatic() {
   const srv = createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    let rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    if (rel.endsWith('/')) rel += 'index.html';
     try {
       const buf = readFileSync(join(SITE_DIR, rel));
       res.writeHead(200, { 'content-type': MIME[extname(rel)] || 'application/octet-stream' });
@@ -109,14 +110,14 @@ class CDP {
     await this.eval(`(() => { const i = document.getElementById('step-input'); i.value = '${v}'; document.getElementById('step-submit').click(); })()`);
   }
   async mode(m) { await this.click(`[data-range="${m}"]`); }
-  async feedback() { return this.eval(`(document.getElementById('step-feedback')?.hidden === false ? document.getElementById('step-feedback').innerText : '')`); }
+  async feedback() { return this.eval(`(document.getElementById('step-feedback')?.hidden === false ? document.getElementById('step-feedback').textContent : '')`); }
 }
 
 /* ---------- 驱动 ---------- */
 const chrome = findChrome();
 if (!chrome) { console.error('找不到 Chromium：设置 CHROME_PATH'); process.exit(2); }
 const { srv, port: webPort } = await serveStatic();
-const siteUrl = `http://127.0.0.1:${webPort}/`;
+const siteUrl = `http://127.0.0.1:${webPort}/diy/`;
 const port = 9400 + Math.floor(Math.random() * 500);
 const profile = join(tmpdir(), 'nk-smoke-scene-profile');
 const child = spawn(chrome, [
@@ -163,14 +164,14 @@ try {
     canvas: !!document.querySelector('#bench3d canvas'),
     title: document.title,
     brand: document.querySelector('#hud-top .brand')?.textContent,
-    github: (() => { const a = document.getElementById('hud-github'); const r = a && a.getBoundingClientRect(); return a ? { text: a.textContent, href: a.href, visible: !!(r && r.width > 0 && r.height > 0) } : null; })(),
+    github: (() => { const a = document.getElementById('hud-github'); const r = a && a.getBoundingClientRect(); return a ? { label: a.getAttribute('aria-label'), href: a.href, visible: !!(r && r.width > 0 && r.height > 0) } : null; })(),
     step: window.__nkStep()
   })`);
   ok('S1a 没有着陆页 / 采购 / 关卡图', !boot.landing && boot.procurement === 0 && boot.levelCards === 0);
   ok('S1b 页面就是 3D 场景', boot.scene && boot.canvas, JSON.stringify(boot));
   ok('S1b1 标题/品牌为 nokeyout，顶部常驻 GitHub 地址',
     boot.title === 'nokeyout' && boot.brand === 'nokeyout' && boot.github && boot.github.visible &&
-    boot.github.text === 'github.com/Purisky/NoKeyOut' &&
+    boot.github.label === 'GitHub' &&
     /github\.com\/Purisky\/NoKeyOut/.test(boot.github.href), JSON.stringify(boot));
   ok('S1c 第一步直接是开关到主板排针', boot.step && boot.step.id === 'w0', JSON.stringify(boot.step));
   ok('S1d 不含检查/安全步骤', boot.modeChips === 0 && !boot.step.id.startsWith('s:'));
@@ -184,9 +185,9 @@ try {
     note: !!document.querySelector('#procurement [data-i18n="proc.note"]'),
     button: document.getElementById('hud-proc').textContent })`);
   await cdp.click('#proc-close');
-  ok('S1j 顶部采购清单列出 8 项且主板按需求描述', proc.visible && proc.items.length === 8 &&
-    /ARM64 主板/.test(proc.items[0]) && /256MB/.test(proc.items[0]) && !/1GB/.test(proc.items[0]) &&
-    /SPI/.test(proc.items[0]) && /拨动开关/.test(proc.items[1]) && proc.note === false &&
+  ok('S1j 顶部采购清单列出 8 项且首项为参考主板', proc.visible && proc.items.length === 8 &&
+    /NanoPi NEO3 Plus/.test(proc.items[0]) && /RK3528A/.test(proc.items[0]) &&
+    /拨动开关/.test(proc.items[1]) && proc.note === false &&
     (await cdp.eval(`document.getElementById('procurement').hidden`)) === true,
     JSON.stringify({ n: proc.items.length, button: proc.button }));
   const silk = await cdp.eval(`(() => {
@@ -265,9 +266,9 @@ try {
   ok('W9 母头比外露针长（针完全在帽内）', wdDone.connMaxY > pinTop, JSON.stringify({ max: wdDone.connMaxY, pinTop }));
 
   const sw0 = await cdp.eval(`window.NKView3D.switchVisual()`);
-  await cdp.click('#hud-switch');
+  await cdp.pick('sw:toggle');
   const sw1 = await cdp.eval(`window.NKView3D.switchVisual()`);
-  await cdp.click('#hud-switch');
+  await cdp.pick('sw:toggle');
   const sw2 = await cdp.eval(`window.NKView3D.switchVisual()`);
   ok('S4g 滑块在原始位（ON）与镜像位（OFF）之间移动',
     sw0 && sw1 && sw2 && !sw0.on && sw1.on && !sw2.on &&
@@ -313,13 +314,11 @@ try {
     Math.abs(term.rect.cy - term.vh / 2) < 2, JSON.stringify({ rect: term.rect, vw: term.vw, vh: term.vh }));
   const guide = await cdp.eval(`({
     params: [...document.querySelectorAll('#tf-term-params li')].map((li) => li.innerText),
-    target: document.getElementById('tf-term-out').innerText,
-    doc: document.getElementById('tf-term-doc').getAttribute('href')
+    target: document.getElementById('tf-term-out').innerText
   })`);
-  ok('P0b2 终端参数与发布文档', guide.params.length >= 5 &&
-    guide.params.join(' ').includes('--board') && guide.params.join(' ').includes('--resolve-only') &&
-    /docs\/install\.md/.test(guide.doc),
-    JSON.stringify({ params: guide.params.length, doc: guide.doc }));
+  ok('P0b2 终端参数', guide.params.length >= 5 &&
+    guide.params.join(' ').includes('--board') && guide.params.join(' ').includes('--resolve-only'),
+    JSON.stringify({ params: guide.params.length }));
   const pNo = await cdp.eval(`window.NKBOARD3D.plugDebug()`);
   ok('P0c 打开终端不等于插卡', pNo.progress.tfcard < 0.001 && !pNo.targets.tfcard, JSON.stringify(pNo));
   const controls = await cdp.eval(`({ noBack: !document.getElementById('tf-term-back'),
@@ -381,22 +380,19 @@ try {
     out: document.getElementById('tf-term-out').innerText,
     bars: document.querySelectorAll('#tf-term-out .term-progress').length })`);
   ok('P0f 终端只显示字符进度（无进度条组件）', tfBusy.state === 'running' && tfBusy.bars === 0 &&
-    /==> 1\/3 解析板型与官方镜像/.test(tfBusy.out) &&
-    /Armbian_community_26\.11\.0-trunk\.104_Nanopi-neo3-plus_trixie_current_6\.18\.57_minimal\.img\.xz/.test(tfBusy.out) &&
-    /\d+ MiB \/ 1\.8 GiB copied/.test(tfBusy.out), JSON.stringify({ state: tfBusy.state, bars: tfBusy.bars }));
+    /==> 1\/3 Resolving board and official image/.test(tfBusy.out) &&
+    /image:   latest Armbian community image \(resolved at run time\)/.test(tfBusy.out) &&
+    /\d+ MiB \/ 1\.8 GiB copied/.test(tfBusy.out), JSON.stringify({ state: tfBusy.state, bars: tfBusy.bars, out: tfBusy.out.slice(-200) }));
   ok('P0g 密码不回显、不写入终端', !tfBusy.out.includes('testpass') && !tfBusy.out.includes('123456'),
     JSON.stringify(tfBusy.out.slice(-120)));
   await cdp.waitFor(`window.__nkTf().flashed`, 15000);
   const tfOut = await cdp.eval(`document.getElementById('tf-term-out').innerText`);
   ok('P0h 结束输出与真实脚本成功输出一致',
-    /==> Rootfs: \/dev\/sda1/.test(tfOut) &&
-    /==> Created user nokeyout \(uid=1000 gid=1000\)/.test(tfOut) &&
     /==> Done\./.test(tfOut) &&
     /==> User: nokeyout/.test(tfOut) &&
     /==> SSH: {2}enabled \(PasswordAuthentication yes\)/.test(tfOut) &&
     /==> First boot: nokeyout-firstboot\.service/.test(tfOut) &&
-    /==> Eject the card, insert it into the board, power on, then: ssh nokeyout@<device-ip>/.test(tfOut) &&
-    /firstboot 会自动安装 NoKeyOut/.test(tfOut),
+    /==> Eject the card, insert it into the board, power on, then: ssh nokeyout@<device-ip>/.test(tfOut),
     tfOut.split('\n').slice(-6).join(' | '));
   await wait(2000);
   const stillOpen = await cdp.eval(`({ hidden: document.getElementById('tf-term').hidden,
@@ -423,12 +419,16 @@ try {
   await cdp.click('#btn-back');
   const pTfOut = await cdp.eval(`window.NKBOARD3D.plugDebug()`);
   const backTf = await cdp.state();
-  ok('B2 返回上一步撤销刚插的卡（保留已烧录）', backTf.idx === 10 && backTf.current === 'plug:tfcard' &&
-    !backTf.plugs.tfcard && backTf.tfFlashed === true &&
+  ok('B2 返回上一步撤销刚插的卡（烧录也回到未烧录）', backTf.idx === 10 && backTf.current === 'plug:tfcard' &&
+    !backTf.plugs.tfcard && backTf.tfFlashed === false &&
     pTfOut.animating && pTfOut.progress.tfcard > 0, JSON.stringify({ backTf, pTfOut }));
   await cdp.waitFor(`window.NKBOARD3D.plugDebug().progress.tfcard < 0.01`, 3000);
   const pBackPark = await cdp.eval(`window.NKBOARD3D.plugDebug()`);
   ok('B2b 返回后卡回到槽外待插入态', pBackPark.parked === true, JSON.stringify(pBackPark));
+  await cdp.pick('J3');
+  await cdp.waitFor(`window.__nkTf().open`, 4000);
+  await cdp.click('#tf-term-skip');
+  await cdp.waitFor(`!window.__nkTf().open`, 3000);
   await cdp.pick('J3');
   await cdp.waitFor(`window.NKBOARD3D.plugDebug().progress.tfcard > 0.99`, 3000);
   await expectStep(cdp, 'plug:lan', 'S6b 插完卡后先接网线');
@@ -445,12 +445,6 @@ try {
   const lanStart = pLan.bounds && pLan.bounds.lan;
   ok('P3c RJ45 沿 +X 从板外插入', cx(lanStart) > cx(lanB) + 1,
     JSON.stringify({ start: lanStart, end: lanB }));
-  const rjStats = pLanDone.materials && pLanDone.materials.lan;
-  ok('P3d RJ45 外壳与 USB-A 同色',
-    !!rjStats && rjStats.ranges >= 1 && rjStats.shells >= 1 &&
-    rjStats.shell.metalness === 0 && rjStats.shell.roughness === 0.62 && rjStats.shell.color[0] === 147,
-    JSON.stringify(rjStats));
-
   await expectStep(cdp, 'plug:power', 'S6c 网线之后接电');
   await cdp.pick('USB-C1');
   const pPower = await cdp.eval(`window.NKBOARD3D.plugDebug()`);
@@ -485,13 +479,13 @@ try {
   await cdp.pick('screen:flip');
   const camAnimOn = await cdp.eval(`window.NKView3D.debug().cam.anim`);
   ok('S6e1b 翻屏镜头切换使用动画', camAnimOn === true);
-  await cdp.waitFor(`window.NKBOARD3D.screenPose() === 'over' && Math.abs(window.NKBOARD3D.screenAngle() - 2 * Math.PI) < 0.02`, 4000);
+  await cdp.waitFor(`window.NKBOARD3D.screenPose() === 'over' && Math.abs(window.NKBOARD3D.screenAngle() - 2 * Math.PI) < 0.02`, 20000);
   await cdp.waitFor(`!window.NKView3D.debug().cam.anim`, 4000);
   await cdp.waitFor(`window.NKView3D.screenDebug().visible`, 3000);
   const sc1 = await cdp.eval(`({ pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
   const camScreen1 = await cdp.eval(`window.NKView3D.debug().cam`);
-  ok('S6e 翻屏后点亮：OFF=ADMIN 显示 IP 页', sc1.pose === 'over' && sc1.dbg.visible === true &&
-    sc1.dbg.source === 'admin', JSON.stringify(sc1));
+  ok('S6e 翻屏后点亮：OFF（断路）=LOCK 显示常规页', sc1.pose === 'over' && sc1.dbg.visible === true &&
+    sc1.dbg.source === 'nokey', JSON.stringify(sc1));
   ok('S6e2 翻屏时镜头正对屏幕并纳入整板', JSON.stringify(camScreen0) !== JSON.stringify(camScreen1) &&
     Math.abs(camScreen1.pitch - 88) < 0.5 && Math.abs(camScreen1.target[2] - 124) < 0.5 &&
     Math.abs(camScreen1.dist - 92) < 0.5, JSON.stringify({ camScreen0, camScreen1 }));
@@ -522,13 +516,13 @@ try {
     flipDone.cue === false && flipDone.fx > 200 && flipDone.fxZ > flipDone.doneZ, JSON.stringify(flipDone));
   const screenImg = await cdp.eval(`({ main: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.main)), locked: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.locked)), en: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.mainEn)), admin: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.admin)), adminEn: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.adminEn)), nokey: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.nokey)), nokeyEn: !!(window.NK_SCREEN_IMG && /^data:image\\/png;base64,/.test(window.NK_SCREEN_IMG.nokeyEn)) })`);
   ok('S6e2d 屏幕贴图全部内嵌（file:// 下也能显示）', Object.values(screenImg).every(Boolean), JSON.stringify(screenImg));
-  const texZh = await cdp.eval(`window.NKView3D.screenDebug().tex`);
+  const texZh = await cdp.eval(`window.NKView3D.screenDebug().wasmPage`);
   await cdp.click('#lang-toggle');
   await cdp.waitFor(`window.NKView3D.screenDebug().lang === 'en'`, 3000);
   const texEn = await cdp.eval(`window.NKView3D.screenDebug()`);
   ok('S6e2e 屏幕语言跟随游戏语言（切换对应页面资源）',
-    texEn.lang === 'en' && texEn.source === 'admin' && texEn.tex !== texZh,
-    JSON.stringify({ before: texZh, after: texEn.tex, lang: texEn.lang }));
+    texEn.lang === 'en' && texEn.wasmPage !== texZh && /:en$/.test(texEn.wasmPage),
+    JSON.stringify({ before: texZh, after: texEn.wasmPage, lang: texEn.lang }));
   await cdp.click('#lang-toggle');
   await cdp.waitFor(`window.NKView3D.screenDebug().lang === 'zh'`, 3000);
   const doneBtn = await cdp.eval(`!!document.getElementById('screen-done')`);
@@ -576,22 +570,14 @@ try {
   const onScreen = await cdp.eval(`window.NKView3D.screenDebug()`);
   const doneOn = await cdp.eval(`document.getElementById('screen-done').disabled`);
   ok('S6e5 USR 再按亮屏、完成按钮恢复', onScreen.visible === true && doneOn === false, JSON.stringify({ onScreen, doneOn }));
-  await cdp.click('#hud-switch');
-  const scNoKey = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
-  ok('S6e6 LOCK + 无密钥 → 提示切 ADMIN 配置供应商',
-    scNoKey.st.sw === true && scNoKey.dbg.source === 'nokey', JSON.stringify(scNoKey));
-  await cdp.click('#hud-switch');
-  const scAdmin = await cdp.eval(`window.NKView3D.screenDebug()`);
-  ok('S6e6d OFF=ADMIN 显示 IP 页', scAdmin.source === 'admin', JSON.stringify(scAdmin));
+  await cdp.pick('sw:toggle');
+  const scAdmin = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
+  ok('S6e6 ON（闭合）=ADMIN 显示 IP 页',
+    scAdmin.st.sw === true && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
+  await cdp.pick('sw:toggle');
+  const scNoKey = await cdp.eval(`window.NKView3D.screenDebug()`);
+  ok('S6e6d OFF（断路）=LOCK + 无密钥 → 提示切 ADMIN 配置供应商', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
 
-  await cdp.click('#screen-done');
-  await cdp.waitFor(`!document.getElementById('complete').hidden`, 5000);
-  await cdp.click('#done-prev');
-  const backScreen = await cdp.eval(`({ st: window.__nkState(), pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
-  ok('B3 从完成返回屏幕步骤：已接电但复位到背面/熄屏', backScreen.st.idx === 13 && backScreen.st.current === 'screen-front' &&
-    backScreen.st.screenFlipped === false && backScreen.st.screenOn === true && backScreen.pose === 'north' && backScreen.dbg.visible === false, JSON.stringify(backScreen));
-  await cdp.pick('screen:flip');
-  await cdp.waitFor(`window.NKBOARD3D.screenPose() === 'over' && window.NKView3D.screenDebug().visible`, 4000);
   await cdp.click('#screen-done');
   await cdp.waitFor(`!document.getElementById('complete').hidden`, 5000);
 

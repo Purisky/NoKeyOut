@@ -1,0 +1,17 @@
+[Unit]
+Description=NoKeyOut physical switch gate
+Documentation=https://nokeyout.com
+After=local-fs.target
+Before=ssh.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/nokeyout/panel.env
+# 开机先同步落盘一次，再进入轮询：ssh.service 的 ExecStartPre 依赖这个文件
+ExecStartPre=/usr/local/bin/nokeyout-switchd --once
+ExecStart=/usr/local/bin/nokeyout-switchd
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

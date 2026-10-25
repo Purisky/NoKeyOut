@@ -29,6 +29,15 @@ D="$STAGE/nokeyout-$VER"; mkdir -p "$D/panel/web" "$D/gateway/luks" "$D/scripts"
 for f in device/panel/*.sh device/panel/*.ps1; do
   [ -e "$f" ] && cp "$f" "$D/panel/"
 done
+# 开关门控：两个无扩展名的 helper + systemd 单元 + 设备树上拉片段
+cp device/panel/nokeyout-switchd device/panel/nokeyout-gate-check "$D/panel/" || {
+  echo "  ❌ 包内缺门控 helper（nokeyout-switchd / nokeyout-gate-check）" >&2
+  exit 1
+}
+mkdir -p "$D/panel/systemd/ssh.service.d" "$D/panel/overlays"
+cp device/panel/systemd/*.service "$D/panel/systemd/"
+cp device/panel/systemd/ssh.service.d/*.conf "$D/panel/systemd/ssh.service.d/"
+cp device/panel/overlays/nokeyout-gate.dts "$D/panel/overlays/"
 for f in device/panel/web/*; do
   case "$f" in */__pycache__) continue;; esac
   [ -f "$f" ] && cp "$f" "$D/panel/web/"
@@ -75,7 +84,8 @@ cp device/update/nokeyout-update "$D/update/" 2>/dev/null || \
 cp device/scripts/verify-magpie.sh "$D/scripts/"
 # Windows 工作区可能把 .sh 写成 CRLF；tarball 里的 shell 必须是 LF，
 # 否则设备上 bash 会把 `pipefail\r` 当成无效选项（setup.sh 直接失败）。
-for f in "$D"/panel/*.sh "$D"/gateway/*.sh "$D"/gateway/nokeyout-upgrade \
+for f in "$D"/panel/*.sh "$D"/panel/nokeyout-switchd "$D"/panel/nokeyout-gate-check \
+         "$D"/gateway/*.sh "$D"/gateway/nokeyout-upgrade \
          "$D"/gateway/nokeyout-magpie-cli "$D"/gateway/luks/*.sh "$D"/scripts/*.sh; do
   [ -f "$f" ] && sed -i 's/\r$//' "$f"
 done

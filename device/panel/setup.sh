@@ -216,6 +216,9 @@ PANEL_SECRET_FILE=/var/lib/nokeyout/secrets/session.key
 MAGPIE_WEB_KEY_FILE=/var/lib/nokeyout/secrets/magpie-web.key
 PANEL_SCREEN_TOKEN_FILE=/var/lib/nokeyout/secrets/screen.token
 SWITCHD_STATE_FILE=/var/lib/nokeyout/switch-state
+# 物理开关：pin11 = GPIO4_A5 = chip4 line 5；断路（上拉）= LOCKED，闭合（GND）= ADMIN
+NOKEYOUT_SWITCH_CHIP=gpiochip4
+NOKEYOUT_SWITCH_LINE=5
 # 屏幕（可选；渲染线程在 Go panel 内，console/st7789/png 三后端）
 # SCREEN_BACKEND=console|st7789|png 才会启用；空=不渲染。接好后：NOKEYOUT_SCREEN=1 重跑 setup.sh。
 # SCREEN_BACKEND=st7789
@@ -269,6 +272,38 @@ rm -f /etc/systemd/system/nokeyout-key-proxy.service \
 run "systemctl daemon-reload"
 run "systemctl enable nokeyout-panel"
 run "systemctl restart nokeyout-panel"
+
+say "6b/7 物理开关门控"
+# 开关断路（LOCK）必须让「泄漏口令 + SSH」这条路也断掉：只关 :8443 不够。
+# 装完即生效——开关在 LOCK 位时，本安装脚本自己的 SSH 会话也会被终止。
+echo "  ⚠️ 开关在 LOCK 位时，安装完成会立即停掉 SSH（含当前会话）；请先在 ADMIN 位安装"
+run "install -m 0755 '$HERE/nokeyout-switchd' /usr/local/bin/nokeyout-switchd"
+run "install -m 0755 '$HERE/nokeyout-gate-check' /usr/local/bin/nokeyout-gate-check"
+run "install -m 0644 '$HERE/systemd/nokeyout-switch.service' /etc/systemd/system/nokeyout-switch.service"
+run "install -d -m 0755 /etc/systemd/system/ssh.service.d"
+run "install -m 0644 '$HERE/systemd/ssh.service.d/nokeyout-gate.conf' /etc/systemd/system/ssh.service.d/nokeyout-gate.conf"
+# 上拉必须在设备树里配：rockchip gpio 驱动忽略运行时 bias 请求，
+# 没有它时「断路（LOCK）」与「闭合（ADMIN）」都读 0，门控永远不触发。
+NEED_REBOOT=0
+if command -v dtc >/dev/null 2>&1 && [ -d /boot/overlay-user ]; then
+  run "dtc -@ -q -I dts -O dtb -o /boot/overlay-user/nokeyout-gate.dtbo '$HERE/overlays/nokeyout-gate.dts'"
+  if ! grep -q 'nokeyout-gate' /boot/armbianEnv.txt 2>/dev/null; then
+    if grep -q '^user_overlays=' /boot/armbianEnv.txt 2>/dev/null; then
+      run "sed -i 's/^user_overlays=.*/& nokeyout-gate/' /boot/armbianEnv.txt"
+    else
+      run "echo 'user_overlays=nokeyout-gate' >> /boot/armbianEnv.txt"
+    fi
+    NEED_REBOOT=1
+  fi
+else
+  echo "  ⚠️ 缺 dtc 或 /boot/overlay-user：未装门控上拉，开关读数不可信"
+fi
+run "systemctl daemon-reload"
+run "systemctl enable nokeyout-switch.service"
+run "systemctl restart nokeyout-switch.service"
+[ "${NEED_REBOOT:-0}" = 1 ] && echo "  ⚠️ 设备树门控上拉是新加的：执行 reboot 后才生效"
+echo "  switch: LOCK ⇒ 停 ssh + 踢会话 + 关 :8443；ADMIN ⇒ 恢复"
+
 
 say "7/7 自检"
 up=0

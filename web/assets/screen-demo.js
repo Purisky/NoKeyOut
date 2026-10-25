@@ -1,4 +1,4 @@
-/* 主页 240×240 屏：开关 ON = LOCK（正常，显示所选供应商配额）；OFF = ADMIN（渲染地址页）。 */
+/* 主页 240×240 屏：开关 OFF（断路）= LOCK（正常，显示所选供应商配额）；ON（闭合）= ADMIN（渲染地址页）。 */
 (function () {
   const canvas = document.getElementById('hero-screen');
   if (!canvas || !window.NK_SCREEN_STATES) return;
@@ -24,8 +24,8 @@
   let last = 0;
   let loading = false;
 
-  /* 开关 ON（闭合）= LOCK = 正常运行 */
-  const isLocked = () => !sw || sw.checked;
+  /* 开关 OFF（断路）= LOCK = 正常运行 */
+  const isLocked = () => !sw || !sw.checked;
   /* 端口开放（ADMIN）计时起点：屏上显示，超过 15 分钟开始闪烁。 */
   let adminAt = isLocked() ? 0 : Date.now();
 

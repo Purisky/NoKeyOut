@@ -1,0 +1,41 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * NoKeyOut 门控引脚：GPIO4_A5（全局 133 / 排针 pin11），另一端接 GND。
+ *   断路（上拉）= LOCKED；闭合（短接 GND）= ADMIN。
+ *
+ * 为什么必须在 DT 里配上拉：
+ *   rockchip gpio 驱动不接受运行时的 line bias 请求（libgpiod 的
+ *   BIAS_PULL_UP 被静默忽略，实测 `gpioget -b pull-up` 与 `-b pull-down`
+ *   读数一致）。没有上拉时，断路（LOCKED）与闭合（ADMIN）都读 0，
+ *   门控永远无法区分——「拔线即锁定」也就无从实现。
+ *
+ * 做法：把 pinconf 挂到 gpio4 控制器节点上，开机 probe 时应用；
+ * 引脚本身仍归 libgpiod（nokeyout-switchd）读取，不被任何驱动占用。
+ *
+ * 安装：dtc -@ -q -I dts -O dtb -o /boot/overlay-user/nokeyout-gate.dtbo \
+ *         device/panel/overlays/nokeyout-gate.dts
+ *       # /boot/armbianEnv.txt: user_overlays=nokeyout-screen nokeyout-gate
+ *       # 注意用空格分隔；逗号会被 u-boot 当成一个文件名
+ */
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			nokeyout-gate-pins {
+				nokeyout_gate_pin: nokeyout-gate-pin {
+					rockchip,pins = <4 5 0 &pcfg_pull_up>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio4>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&nokeyout_gate_pin>;
+		};
+	};
+};

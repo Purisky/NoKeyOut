@@ -2405,7 +2405,6 @@
         locked: screenPageName === 'locked', source: screenPageName,
         lang: screenLang(),
         wasm: screenWasmReady, native: screenWasmReady && nativeScreenPage(screenPageName), wasmPage: screenWasmPage,
-        tex: screenTex ? screenTex.uuid : null,
         map: screenFrameTex ? screenFrameTex.uuid : null,
         size: screenFrameCanvas ? [screenFrameCanvas.width, screenFrameCanvas.height] : null,
         face: screenDisplay ? screenDisplay.material.side : null,

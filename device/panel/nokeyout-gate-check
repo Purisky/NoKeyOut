@@ -1,0 +1,12 @@
+#!/bin/sh
+# nokeyout-gate-check —— ssh.service 的 ExecStartPre（见 ssh.service.d/nokeyout-gate.conf）
+#
+# 只有状态为精确的 unlocked 才放行（fail-closed）：locked、空文件、缺失文件、读失败都拒绝。
+# 状态文件契约与 nokeyout-switchd 一致。
+STATE="${SWITCHD_STATE_FILE:-/var/lib/nokeyout/switch-state}"
+s=$(cat "$STATE" 2>/dev/null)
+if [ "$s" = 'unlocked' ]; then
+  exit 0
+fi
+echo "nokeyout: switch state '${s:-unknown}' — ssh refused (only 'unlocked' allows ssh)" >&2
+exit 1

@@ -14,7 +14,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const LEVEL_DIR = join(process.cwd(), 'site', 'levels');
+const LEVEL_DIR = join(process.cwd(), 'web', 'diy', 'levels');
 const KINDS = new Set(['procurement', 'wiring', 'field', 'verify', 'complete']);
 
 const window = { registerLevel: (l) => LEVELS.push(l) };

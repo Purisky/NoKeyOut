@@ -20,7 +20,7 @@
 <div class="c">
   <div class="lock">🔒</div>
   <h1>设备处于关闭模式</h1>
-  <p class="muted">管理面已阻隔。将物理开关拨到开启位后刷新本页。<br>网关服务（模型调用）不受影响。</p>
+  <p class="muted">管理面已阻隔。将物理开关拨到 ADMIN 位（闭合）后刷新本页。<br>网关服务（模型调用）不受影响。</p>
 </div>
 <script>
 /* 界面语言与设备屏同源：GET/POST /api/lang（server.lang()）。字典按「中文原文」索引。 */
@@ -28,8 +28,8 @@ const NK = { lang: 'zh' };
 NK.I18N = {
   "NoKeyOut · 关闭模式": "NoKeyOut · Locked mode",
   "设备处于关闭模式": "Device is in locked mode",
-  "管理面已阻隔。将物理开关拨到开启位后刷新本页。":
-    "Admin access is blocked. Flip the physical switch to the open position and reload this page.",
+  "管理面已阻隔。将物理开关拨到 ADMIN 位（闭合）后刷新本页。":
+    "Admin access is blocked. Flip the physical switch to ADMIN (closed) and reload this page.",
   "网关服务（模型调用）不受影响。": "The gateway service (model calls) is unaffected.",
   "English": "中文",
 };

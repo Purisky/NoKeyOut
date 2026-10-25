@@ -27,7 +27,7 @@ graph LR
 ## Three things the box does
 
 - **Keys on the box.** Provider keys live only on the device. Clients get gateway keys, revocable per machine.
-- **Physical lock.** The switch closes SSH and the panel.
+- **Physical lock.** The switch closes SSH and the panel. The gateway stays up for clients that hold a valid gateway key. Open circuit = LOCK; closing the circuit = ADMIN, so a pulled wire fails locked.
 - **Local screen.** 240x240: IP, lock state, usage, quota.
 
 ## Install

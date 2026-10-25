@@ -57,8 +57,10 @@ supervise() { # $1=名字 $2=可执行 $3=运行用户
 supervise magpie     /usr/local/bin/magpie           magpie-rt
 supervise panel      /var/lib/nokeyout/app/panel-go  nokeyout
 
-# dropbear（SSH）
-[ -x /usr/sbin/dropbear ] && /usr/sbin/dropbear -E -R 2>/dev/null
+# dropbear（SSH）：仅 switch-state 为 unlocked 时启动（fail-closed：空/缺失也不启动）
+if [ "$(cat /var/lib/nokeyout/switch-state 2>/dev/null)" = unlocked ] && [ -x /usr/sbin/dropbear ]; then
+  /usr/sbin/dropbear -E -R 2>/dev/null
+fi
 
 echo "nokeyout: services starting (panel https://$IP:8443)" > /dev/console 2>/dev/null || true
 exit 0

@@ -40,7 +40,8 @@ var (
 func defaultLocked() bool { return os.Getenv("PANEL_DEFAULT_LOCKED") == "1" }
 
 // readState：TTL 解锁期内恒 unlocked（reason=ttl）；否则读状态文件；
-// 文件不存在 = 开发机无开关，默认 unlocked（不能把管理面锁死；失效方向 = 开放）。
+// 文件不存在 = 开发机无开关，默认 unlocked（不能把管理面锁死）。
+// 注意：硬件开关本身的失效方向是「锁定」——断路/断线 = LOCKED，由 switchd 写进状态文件。
 func readState() (bool, string) {
 	ttlUntilMu.Lock()
 	until := ttlUntil

@@ -38,9 +38,9 @@ window.registerLevel({
       dont: { zh: "认准 Plus：别买成无排针的 NEO3 基础版", en: "Make sure it is the Plus — not the headerless base NEO3." } },
     { id: "sw", qty: 1,
       spec: { zh: "拨动开关，锁存 2 档，**推荐带 10k 上拉的开关模块**（2.54 排针）；裸开关也行（改用 SoC 内部上拉）", en: "Latching 2-position toggle; a module WITH 10k pull-up (2.54mm header) is preferred; a bare switch also works (using the SoC's internal pull-up)" },
-      why: { zh: "闭合 = 把 GPIO4_A5 短到 GND = LOCKED；断开 = 内部/外置上拉把它拉高 = UNLOCKED（失效开放）", en: "Closed = shorts GPIO4_A5 to GND = LOCKED; open = pulled HIGH by internal/external pull-up = UNLOCKED (fail-open)." },
+      why: { zh: "断路 = 内部/外置上拉把它拉高 = LOCKED；闭合 = 把 GPIO4_A5 短到 GND = ADMIN。拔线/断线同样落在 LOCKED（失效锁定）。引脚读失败时 switchd 保持上一次状态", en: "Open = pulled HIGH by the internal/external pull-up = LOCKED; closed = shorts GPIO4_A5 to GND = ADMIN. A pulled or broken wire also fails to LOCKED. On a pin read failure switchd keeps the last state." },
       channel: { zh: "通用电子元件渠道", en: "General electronics supplier" },
-      dont: { zh: "别买内置**下拉**的模块（按下才接通 3V3）→ 恒 LOCKED 不可用；别买带 LED 的模块", en: "Do NOT buy pull-DOWN modules (press connects 3V3) — permanently LOCKED; no LED modules." } },
+      dont: { zh: "别买内置**下拉**的模块（常为低电平）→ 恒 ADMIN（管理面永远开着），比不装更危险；别买带 LED 的模块", en: "Do NOT buy pull-DOWN modules (held low) — permanently ADMIN (panel always open), worse than no switch; no LED modules." } },
     { id: "wires", qty: 2,
       spec: { zh: "母-母杜邦线 20cm ×2（买 40 根套装亦可）", en: "Female-female dupont 20cm ×2 (40-pc kit fine)" },
       why: { zh: "本关只需要 2 根：pin11 与 pin9 各一根", en: "Only two wires this level: one to pin11, one to pin9." },
@@ -159,7 +159,7 @@ window.registerLevel({
           { zh: "明确动作：开关中间引线 C → pin11（蓝色高亮针）", en: "Exact action: switch middle lead C → pin11 (blue pillar)." }
         ] },
       { edge: ["sw:B", "pin:9"],
-        observe: { zh: "另一根落 GND：C 与 B 闭合时把 GPIO4_A5 短到地 = LOCKED 电平", en: "The other wire lands on GND: closing C to B shorts GPIO4_A5 low = the LOCKED level." },
+        observe: { zh: "另一根落 GND：C 与 B 闭合时把 GPIO4_A5 短到地 = ADMIN 电平；断开即回 LOCKED", en: "The other wire lands on GND: closing C to B shorts GPIO4_A5 low = the ADMIN level; opening it returns to LOCKED." },
         typicalFail: { zh: "错接到 pin2/4（5V）→ 上电即烧 GPIO。这是本关最危险的一根", en: "Into pin2/4 (5V) burns the GPIO on power-up — the most dangerous wire here." },
         hints: [
           { zh: "GND 还有 pin6/14/20/25；pin9 与 pin11 同排好走线", en: "GND is also on 6/14/20/25; pin9 shares the row with pin11." },
@@ -259,7 +259,7 @@ window.registerLevel({
       { pair: ["pin:2", "sw:B"], hint: { zh: "开关接地端 B 接到了 5V —— 闭合瞬间把 5V 灌进 GPIO，烧针脚。立刻改到 GND", en: "The switch ground lead B is on 5V — closing it feeds 5V into the GPIO and burns the pin. Move it to GND." } },
       { pair: ["pin:2", "sw:C"], hint: { zh: "开关公共端 C 接到了 5V —— 拨到任一档都会把 5V 灌进 GPIO，烧针脚。立刻改到 pin11", en: "The switch common C is on 5V — either position feeds 5V into the GPIO and burns it. Move it to pin11." } },
       { pair: ["pin:2", "pin:9"], hint: { zh: "5V 直接对地 = 短路。立刻断电", en: "5V straight to GND = short. Power off." } },
-      { pair: ["pin:11", "pin:9"], hint: { zh: "这等于把 GPIO 直接钉死到地：门控会恒为 LOCKED，而且拔线也不会恢复", en: "That pins the GPIO to GND permanently: gating would be stuck LOCKED and unplugging would not recover it." } },
+      { pair: ["pin:11", "pin:9"], hint: { zh: "这等于把 GPIO 直接钉死到地：盒子恒为 ADMIN（管理面永远开放），拔线也不会锁定", en: "That pins the GPIO to GND: the box is stuck in ADMIN (panel always open) and unplugging never locks it." } },
       { pair: ["pin:17", "pin:9"], hint: { zh: "3V3 对地短路。立刻断电", en: "3V3 to GND short. Power off." } }
     ]
   },
@@ -272,20 +272,20 @@ window.registerLevel({
   verifyTitle: { zh: "上电与门控验收", en: "Power-up & gating acceptance" },
   verify: [
     { id: "get-lock", kind: "number",
-      prompt: { zh: "上电后（SSH：插网线后登进设备）gpioget gpiochip4 5：开关拨到 LOCK 位（闭合）读数", en: "After power-up, gpioget gpiochip4 5 with the switch at LOCK (closed)" },
-      expect: [0, 0],
-      failHint: { zh: "闭合读 0。读 1 = 信号线没接到 pin11/pin9", en: "Closed reads 0. A 1 = signal wire not on pin11/pin9." } },
-    { id: "get-admin", kind: "number",
-      prompt: { zh: "同一命令（SSH）：开关拨到 ADMIN 位（断开）读数", en: "Same command over SSH: switch at ADMIN (open)" },
+      prompt: { zh: "上电后（SSH：插网线后登进设备）gpioget gpiochip4 5：开关拨到 LOCK 位（断路）读数", en: "After power-up, gpioget gpiochip4 5 with the switch at LOCK (open circuit)" },
       expect: [1, 1],
-      failHint: { zh: "断开读 1。若读到 0 或乱跳：内部上拉没配（DT bias-pull-up）或模块下拉型", en: "Open reads 1. A 0 or jitter means the internal pull-up is not configured (DT bias-pull-up) or the module is pull-down type." },
+      failHint: { zh: "断路读 1。读到 0 = 信号线仍短在 GND 上（停在闭合位或引脚被短接），LOCK 位就锁不上", en: "Open reads 1. A 0 means the signal line is still shorted to GND (closed position or a short) — LOCK would never engage." } },
+    { id: "get-admin", kind: "number",
+      prompt: { zh: "同一命令（SSH）：开关拨到 ADMIN 位（闭合）读数", en: "Same command over SSH: switch at ADMIN (closed circuit)" },
+      expect: [0, 0],
+      failHint: { zh: "闭合读 0。读到 1 = 信号线没接到 pin11/pin9（断路），盒子会一直停在 LOCKED", en: "Closed reads 0. A 1 means the signal wire is not on pin11/pin9 (open circuit) — the box would stay LOCKED." },
       hints: [
-        { zh: "确认 DT 里给该脚开了 bias-pull-up 并已重启", en: "Confirm bias-pull-up is enabled for that pin in DT and the board rebooted." },
+        { zh: "确认 DT 里给该脚开了 bias-pull-up 并已重启；否则断路与闭合都读 0", en: "Confirm bias-pull-up is enabled for that pin in DT and the board rebooted; otherwise open and closed both read 0." },
         { zh: "用 `gpioinfo` 看你那一路的 line 名称/bias 状态", en: "Use `gpioinfo` to inspect the line's bias state." },
-        { zh: "明确判据：断开必须读 1", en: "Criterion: open must read 1." }
+        { zh: "明确判据：闭合必须读 0", en: "Criterion: closed must read 0." }
       ] },
     { id: "init-screen", kind: "select",
-      prompt: { zh: "开关拨到管理位（ADMIN，断开）但网线还没插：屏幕应显示什么？", en: "Switch at ADMIN (open) with no Ethernet cable yet: what should the screen show?" },
+      prompt: { zh: "开关拨到管理位（ADMIN，闭合）但网线还没插：屏幕应显示什么？", en: "Switch at ADMIN (closed) with no Ethernet cable yet: what should the screen show?" },
       options: [
         { zh: "未检测到以太网（插上网线后显示 IP）", en: "\"No Ethernet detected\" (and the IP once the cable is in)" },
         { zh: "IP 地址，照常显示", en: "The IP, as usual" },
@@ -303,7 +303,7 @@ window.registerLevel({
       ], expect: 0,
       failHint: { zh: "LOCKED 只挡管理面（8443），放行 3425 与 443 出网", en: "LOCKED blocks only the panel (8443); 3425 and 443 stay open." } },
     { id: "gpio-lock", kind: "select",
-      prompt: { zh: "切 GPIO 后端后拨到 LOCK 位：管理面表现", en: "With the GPIO backend: switch at LOCK — the panel" },
+      prompt: { zh: "切 GPIO 后端后拨到 LOCK 位（断路）：管理面表现", en: "With the GPIO backend: switch at LOCK (open circuit) — the panel" },
       options: [
         { zh: "管理面不可达（连接被拒绝）", en: "Becomes unreachable (connection refused)" },
         { zh: "管理面仍能正常登录", en: "Still logs in normally" },
@@ -311,7 +311,7 @@ window.registerLevel({
       ], expect: 0,
       failHint: { zh: "GPIO 链路没生效：查 gpioget 读数与 switchd 后端切换", en: "GPIO chain not effective: check gpioget and switchd backend." } },
     { id: "gpio-admin", kind: "select",
-      prompt: { zh: "拨回 ADMIN 位：管理面表现", en: "Switch back to ADMIN: the panel" },
+      prompt: { zh: "拨回 ADMIN 位（闭合）：管理面表现", en: "Switch back to ADMIN (closed): the panel" },
       options: [
         { zh: "恢复正常登录", en: "Logs in normally again" },
         { zh: "仍然不可达", en: "Still unreachable" },
@@ -321,8 +321,8 @@ window.registerLevel({
   ],
   complete: {
     reveal: {
-      zh: "两根线就够：闭合 = LOCKED（管理面默认拒绝），断开 = 内部上拉拉高 = UNLOCKED；3425 业务面永不封。也可改用外置 10k + 100nF 的硬件变体（教程不设关）",
-      en: "Two wires are enough: closed = LOCKED (panel denies), open = internal pull-up = UNLOCKED; the 3425 gateway never closes. An external 10k + 100nF variant is optional (not a game level)."
+      zh: "两根线就够：断路 = LOCKED（管理面与 SSH 关闭，拔线同样锁定），闭合 = ADMIN；3425 业务面永不封。也可改用外置 10k + 100nF 的硬件变体（教程不设关）",
+      en: "Two wires are enough: open circuit = LOCKED (panel and SSH closed; a pulled wire locks too), closed = ADMIN; the 3425 gateway never closes. An external 10k + 100nF variant is optional (not a game level)."
     },
     badge: {
       title: { zh: "第一关 · 通关（免焊 10 线）", en: "Level 1 · Cleared (10 solderless wires)" },

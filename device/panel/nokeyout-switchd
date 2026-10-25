@@ -1,0 +1,104 @@
+#!/bin/sh
+# nokeyout-switchd —— 物理开关门控（状态的唯一权威）
+#
+# 硬件：拨动开关一端接排针 pin11 = GPIO4_A5（全局 133），另一端接 pin9 = GND。
+#   断路（SoC 内部上拉拉高）= LOCKED；闭合（短接 GND）= ADMIN。
+#   失效方向 = 锁定：线松脱/断线同样落回 LOCKED。引脚读失败时保持上一次状态，
+#   不因单次读失败而抖动（真正的失效——断路——本身就读 1）。
+#
+# 契约（panel 只读文件，不碰硬件）：
+#   /var/lib/nokeyout/switch-state   locked | unlocked
+#   LOCKED   ⇒ systemctl stop ssh + 踢掉已建立的 SSH 会话
+#   UNLOCKED ⇒ systemctl start ssh（若该单元为 enabled）
+#
+# 去抖：连续 3 次 × 50ms 读数一致才认（与教程契约一致）。
+#
+# 用法：
+#   nokeyout-switchd            # 常驻（systemd Type=simple）
+#   nokeyout-switchd --once     # 只采样一次并落盘（开机时先于 ssh 启动）
+set -u
+
+CHIP="${NOKEYOUT_SWITCH_CHIP:-gpiochip4}"
+LINE="${NOKEYOUT_SWITCH_LINE:-5}"
+STATE="${SWITCHD_STATE_FILE:-/var/lib/nokeyout/switch-state}"
+POLL="${NOKEYOUT_SWITCH_POLL_MS:-200}"
+DEBOUNCE="${NOKEYOUT_SWITCH_DEBOUNCE:-3}"
+STEP="${NOKEYOUT_SWITCH_DEBOUNCE_STEP_MS:-50}"
+
+log() { printf 'nokeyout-switchd: %s\n' "$*" >&2; }
+
+sample() { gpioget -c "$CHIP" -b pull-up --numeric "$LINE" 2>/dev/null; }
+
+# stable：连续 DEBOUNCE 次读数一致才输出该值；抖动或读失败返回 1。
+stable() {
+  n=0; first=''
+  while [ "$n" -lt "$DEBOUNCE" ]; do
+    v=$(sample)
+    [ -n "$v" ] || return 1
+    if [ -z "$first" ]; then first="$v"; fi
+    [ "$v" = "$first" ] || return 1
+    n=$((n + 1))
+    [ "$n" -lt "$DEBOUNCE" ] && sleep "$(printf '0.%03d' "$STEP")" 2>/dev/null || true
+  done
+  printf '%s' "$first"
+}
+
+apply() { # $1 = locked|unlocked
+  case "$1" in
+    locked)
+      # 顺序很关键：先记监听 pid。`systemctl stop ssh` 会删掉 /run/sshd.pid，
+      # 之后再读就是空 → 已建立的会话会活下来（实测踩过）。
+      pid=$(cat /run/sshd.pid 2>/dev/null || true)
+      if [ -n "${pid:-}" ]; then
+        pkill -TERM -P "$pid" 2>/dev/null || true
+      fi
+      if systemctl is-active --quiet ssh 2>/dev/null; then
+        log 'stopping ssh'
+        systemctl stop ssh 2>/dev/null || true
+      fi
+      # 兜底：按会话进程名清扫。监听进程的 cmdline 是
+      # `sshd: /usr/sbin/sshd -D [listener]`，不会被下面两条模式命中；
+      # 也不会误伤以 nokeyout 运行的 panel（/var/lib/nokeyout/app/panel-go）。
+      pkill -TERM -f '^sshd-session:' 2>/dev/null || true
+      pkill -TERM -f '^sshd: [a-z]' 2>/dev/null || true
+      sleep 1
+      pkill -KILL -f '^sshd-session:' 2>/dev/null || true
+      pkill -KILL -f '^sshd: [a-z]' 2>/dev/null || true
+      if systemctl is-active --quiet dropbear 2>/dev/null; then
+        systemctl stop dropbear 2>/dev/null || true
+      fi
+      pkill -x dropbear 2>/dev/null || true
+      ;;
+    unlocked)
+      if systemctl is-enabled --quiet ssh 2>/dev/null; then
+        systemctl start ssh 2>/dev/null || true
+      fi
+      ;;
+  esac
+}
+
+setstate() { # $1 = locked|unlocked
+  if [ "$(cat "$STATE" 2>/dev/null)" = "$1" ]; then return 0; fi
+  if ! { printf '%s\n' "$1" > "$STATE.new" && mv -f "$STATE.new" "$STATE"; }; then
+    log "cannot write $STATE"
+    return 1
+  fi
+  log "switch=$1"
+  apply "$1"
+}
+
+if [ "${1:-}" = '--once' ]; then
+  v=$(stable) || { log 'gpio read failed — state unchanged'; exit 0; }
+  [ "$v" = 1 ] && setstate locked || setstate unlocked
+  exit $?
+fi
+
+while :; do
+  v=$(stable)
+  if [ -z "${v:-}" ]; then
+    sleep 0.2
+    continue
+  fi
+  if [ "$v" = 1 ]; then setstate locked; else setstate unlocked; fi
+  sleep "0.$(printf '%03d' "$POLL")" 2>/dev/null || sleep 0.2
+done
