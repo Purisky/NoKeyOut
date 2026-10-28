@@ -302,32 +302,92 @@ func TestPagesRenderContent(t *testing.T) {
 	}
 }
 
-// ADMIN 页：端口开放计时每秒推进；超过 15 分钟才进入 1Hz 闪烁。
-func TestAdminPageTimerAndBlink(t *testing.T) {
-	render := func(sec float64) *Canvas {
+// ADMIN 页：产品图标 + Silkscreen 大字标 + 放大倒计时（只显示时长、居中）。
+// 不再有图标外圈动画、/15:00 与分割线；超过 15 分钟转危险色。
+func TestAdminPageLayout(t *testing.T) {
+	renderNow := func(sec, now float64) *Canvas {
 		c := newCanvas(screenW, screenH)
 		uiRender("main", map[string]any{
 			"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": sec,
-		}, newHistory(), c, 0, "zh", "12:34", animState{})
+		}, newHistory(), c, 0, "zh", "12:34", animState{now: now})
 		return c
 	}
+	render := func(sec float64) *Canvas { return renderNow(sec, 0) }
 	if bytes.Equal(render(0).Buf, render(65).Buf) {
 		t.Fatal("计时没有随 admin_s 推进")
 	}
-	// 15 分钟前：同一个秒内亮/暗相位必须完全一致（不闪）。
-	if !bytes.Equal(render(899.0).Buf, render(899.5).Buf) {
-		t.Fatal("未到 15 分钟就开始闪烁")
-	}
-	// 15 分钟后：相位交替（秒表仍停在 901，唯一差异只能来自闪烁）。
-	if bytes.Equal(render(901.0).Buf, render(901.5).Buf) {
-		t.Fatal("超过 15 分钟没有闪烁")
-	}
-	// 计时行不截断，必须自己放得下（卡片内宽）。
-	for _, lang := range []string{"zh", "en"} {
-		line := newTxt(lang).get("admin_open") + " " + fmtAdminDur(3661)
-		if w := mixedWidth(line, SM, CJKFont); w > screenW-2*screenMX-16 {
-			t.Fatalf("%s 计时行超宽：%d > %d", lang, w, screenW-2*screenMX-16)
+
+	inkCount := func(c *Canvas, y0, y1 int) int {
+		n := 0
+		for y := y0; y <= y1; y++ {
+			for x := 0; x < screenW; x++ {
+				if pxAt(c, x, y) != uint16(screenBG) {
+					n++
+				}
+			}
 		}
+		return n
+	}
+	// 字标区（Silkscreen，74..95）必须有大量墨迹。
+	if n := inkCount(render(0), 74, 95); n < 200 {
+		t.Fatalf("Silkscreen 字标墨迹过少：%d", n)
+	}
+	// 倒计时放大 2 倍后高度约 48px：140..188 条带里必须有墨迹，且上下都覆盖到。
+	if n := inkCount(render(300), 146, 170); n < 120 {
+		t.Fatalf("倒计时墨迹过少：%d", n)
+	}
+	if inkCount(render(300), 146, 152) == 0 || inkCount(render(300), 164, 170) == 0 {
+		t.Fatal("倒计时没有铺满 24px 高度")
+	}
+
+	// 倒计时水平居中。
+	lo, hi := screenW, -1
+	for y := 146; y <= 170; y++ {
+		for x := 0; x < screenW; x++ {
+			if pxAt(render(300), x, y) != uint16(screenBG) {
+				if x < lo {
+					lo = x
+				}
+				if x > hi {
+					hi = x
+				}
+			}
+		}
+	}
+	if lo < 0 {
+		t.Fatal("倒计时没有墨迹")
+	}
+	if mid := (lo + hi) / 2; mid < screenW/2-8 || mid > screenW/2+8 {
+		t.Fatalf("倒计时未居中：墨迹 %d..%d（中线 %d）", lo, hi, screenW/2)
+	}
+
+	// 正常状态无危险色；达到 15 分钟阈值后倒计时转红。
+	dangerInk := func(c *Canvas, y0, y1 int) int {
+		n := 0
+		for y := y0; y <= y1; y++ {
+			for x := 0; x < screenW; x++ {
+				if pxAt(c, x, y) == uint16(screenDanger) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if n := dangerInk(render(300), 100, 220); n != 0 {
+		t.Fatalf("未超阈值不应出现危险色，got %d", n)
+	}
+	if n := dangerInk(render(1000), 146, 170); n == 0 {
+		t.Fatal("超过 15 分钟倒计时应变红")
+	}
+
+	// 不闪：同一秒内的两个相位必须完全一致。
+	if !bytes.Equal(render(899.0).Buf, render(899.5).Buf) {
+		t.Fatal("同一秒内出现闪烁（不要 1Hz 闪烁）")
+	}
+
+	// 字标亮度跟随官方扫掠曲线：动画时钟下与静态帧不同。
+	if bytes.Equal(renderNow(300, 0).Buf, renderNow(300, 2.5).Buf) {
+		t.Fatal("字标动画没有生效")
 	}
 }
 

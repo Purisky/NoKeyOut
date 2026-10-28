@@ -61,7 +61,7 @@ func TestBalanceRowRendersAmount(t *testing.T) {
 	}
 	c := newCanvas(screenW, screenH)
 	c.fillRect(0, 0, screenW, screenH, screenBG)
-	drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0)
+	drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0, false, 0)
 	// 不得出现条轨道（card2）
 	if run := maxRunColor(c, bandPoolH, uint16(screenCard2)); run > 6 {
 		t.Fatalf("余额行不该画进度条（出现 %dpx 轨道）", run)
@@ -78,7 +78,7 @@ func TestBalanceRowRendersAmount(t *testing.T) {
 	cn := map[string]any{"provider": "x", "name": "X", "mode": "balance", "amount": 8.62, "unit": "CNY"}
 	c3 := newCanvas(screenW, screenH)
 	c3.fillRect(0, 0, screenW, screenH, screenBG)
-	drawQuotaRowDetailed(c3, newTxt("zh"), 0, true, cn, 0)
+	drawQuotaRowDetailed(c3, newTxt("zh"), 0, true, cn, 0, false, 0)
 	if n := inkCount(c3, 8+iconDetailed+6, 8+iconDetailed+6+labelSlotW()-1, 19, 29); n != 0 {
 		t.Fatalf("CNY 标签槽应留空（字模没有 ¥），得到 %d 像素", n)
 	}
@@ -103,7 +103,7 @@ func TestBalanceRowRendersAmount(t *testing.T) {
 	z := map[string]any{"provider": "x", "name": "X", "mode": "balance", "amount": 0.0, "unit": "USD"}
 	c2 := newCanvas(screenW, screenH)
 	c2.fillRect(0, 0, screenW, screenH, screenBG)
-	drawQuotaRowDetailed(c2, newTxt("zh"), 0, true, z, 0)
+	drawQuotaRowDetailed(c2, newTxt("zh"), 0, true, z, 0, false, 0)
 	if n := inkCountColor(c2, x0, screenW-9, 19, 29, uint16(screenDanger)); n == 0 {
 		t.Fatal("余额为 0 时应为危险色")
 	}

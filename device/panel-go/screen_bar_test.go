@@ -96,7 +96,7 @@ func TestPoolRowNeverOverflows(t *testing.T) {
 	row := func(m map[string]any) *Canvas {
 		c := newCanvas(screenW, screenH)
 		c.fillRect(0, 0, screenW, screenH, screenBG) // 哨兵
-		drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0)
+		drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0, false, 0)
 		return c
 	}
 	bg := uint16(screenBG)
@@ -244,10 +244,10 @@ func TestQuotaRowValueStates(t *testing.T) {
 		}
 		return m
 	}
-	render := func(draw func(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int), m map[string]any) *Canvas {
+	render := func(draw func(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64), m map[string]any) *Canvas {
 		c := newCanvas(screenW, screenH)
 		c.fillRect(0, 0, screenW, screenH, screenBG)
-		draw(c, newTxt("zh"), 0, true, m, 0)
+		draw(c, newTxt("zh"), 0, true, m, 0, false, 0)
 		return c
 	}
 	// 值区几何（与实现同一套常量）：详细 x=66、文字盒 y+19、条 y+21..26；
@@ -378,7 +378,7 @@ func TestQuotaValueColumnAligned(t *testing.T) {
 	measure := func(used float64) geo {
 		c := newCanvas(screenW, screenH)
 		c.fillRect(0, 0, screenW, screenH, screenBG)
-		drawQuotaRowDetailed(c, newTxt("zh"), 0, true, pool(used), 0)
+		drawQuotaRowDetailed(c, newTxt("zh"), 0, true, pool(used), 0, false, 0)
 		barEnd := -1
 		for y := 21; y <= 26; y++ {
 			for x := x0; x < screenW; x++ {
@@ -434,7 +434,7 @@ func TestQuotaTimeMarker(t *testing.T) {
 	}
 	c := newCanvas(screenW, screenH)
 	c.fillRect(0, 0, screenW, screenH, screenBG)
-	drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0)
+	drawQuotaRowDetailed(c, newTxt("zh"), 0, true, m, 0, false, 0)
 
 	x0 := 8 + iconDetailed + 6 + labelSlotW()
 	bw := (screenW - 8) - x0 - SM.width("100%") - 6

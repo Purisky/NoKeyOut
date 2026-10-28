@@ -311,16 +311,34 @@ func rowIcon(c *Canvas, m map[string]any, x, y, size int) {
 	SM.drawCenter(c, x+size/2, y+size/2-6, mk.mark, inkOnDark(mk.color))
 }
 
+// providerActive：该供应商是否"正在被调用"（magpie 的 lastServedAt 归因 +
+// 用量增长时点亮的 activeUntil）。动画本身用 M3 不确定圆形指示器（见 screen_motion.go）。
+func providerActive(snap map[string]any, provider string) bool {
+	if provider == "" || snapS(snap, "active_provider") != provider {
+		return false
+	}
+	until, ok := snapF(snap, "active_until")
+	return ok && nowFn().Unix() < int64(until)
+}
+
+// drawProviderSpinner：在图标外圈画 M3 不确定圆形指示器（官方参数）。
+func drawProviderSpinner(c *Canvas, cx, cy, r int, now float64) {
+	drawM3Indeterminate(c, cx, cy, r, 2, screenAccent, now)
+}
+
 // drawQuotaRowDetailed：详细行（36px）——图标 32 ｜ 第一行：供应商名 ｜ 第二行：周期 + 值区（条/倒计时）。
 // 内容 8px 边距（与其它模块同一网格）；行分隔线通栏（0..屏宽-1）。
 // inset = 右侧预留宽度（模块末尾的 "+N" 提示占位）。
-func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int) {
+func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64) {
 	c.fillRect(0, y, screenW, bandPoolH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
 	rowIcon(c, m, x, y+2, iconDetailed)
+	if active {
+		drawProviderSpinner(c, x+iconDetailed/2, y+2+iconDetailed/2, iconDetailed/2+1, now)
+	}
 
 	tx := x + iconDetailed + 6
 	name := snapS(m, "name")
@@ -340,13 +358,16 @@ func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any
 }
 
 // drawQuotaRowCompact：简易行（20px）——图标 + 周期 + 值区（条/倒计时），整行一条。
-func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int) {
+func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64) {
 	c.fillRect(0, y, screenW, bandCompactH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
 	rowIcon(c, m, x, y+1, iconCompact)
+	if active {
+		drawProviderSpinner(c, x+iconCompact/2, y+1+iconCompact/2, iconCompact/2, now)
+	}
 
 	bx := x + iconCompact + 6
 	drawWindowLabel(c, bx, y+4, m)

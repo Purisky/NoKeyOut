@@ -105,6 +105,12 @@ func (p *panel) screenLoop(backend string) {
 	ring := -1.0             // 圆环扫掠当前值（-1=未初始化）
 	powerOn := dev != nil    // 首帧也走一次 CRT 开机动画（物理屏 RAM 不可信）
 	startedAt := time.Now()
+	// 顶层页面切换（LOCK ↔ ADMIN 打开）：Material fade through（300ms）。
+	prevUnlocked := false
+	transStart := time.Time{}
+	transPrevUnlocked := false
+	var transPrev *Canvas
+	screenInited := false
 	ver := screenCfgVer.Load()
 	for {
 		// 面板尺寸/方向变了：关旧设备、按新几何重建画布与驱动（实时生效，不重启进程）。
@@ -148,6 +154,7 @@ func (p *panel) screenLoop(backend string) {
 			slide: 1,
 			ring:  ring,
 			pulse: math.Mod(tick.Sub(startedAt).Seconds(), 1.0), // 1Hz 锁定脉冲
+			now:   tick.Sub(startedAt).Seconds(),
 		}
 		// 圆环向目标扫掠（300ms 收敛）
 		if hit, ok := snapF(snapMap(snap, "traffic"), "cache_hit_pct"); ok {
@@ -170,15 +177,43 @@ func (p *panel) screenLoop(backend string) {
 			p.screen.setPage("main", lang)
 		}
 
+		inTrans := false
 		if dev != nil {
 			renderScreenPage(snap, hist, scratch, lang, anim)
 			if active, _ := chal.peek()["active"].(bool); active {
 				uiChallenge(scratch, chal.peek())
 			}
-			if powerOn {
+			// 顶层页面切换：Material fade through（出场 90ms + 入场 210ms）。
+			unlocked := snapS(snap, "switch") == "unlocked"
+			if !screenInited {
+				prevUnlocked, screenInited = unlocked, true
+			} else if unlocked != prevUnlocked && !powerOn {
+				transPrevUnlocked = prevUnlocked
+				prevUnlocked = unlocked
+				transStart = tick
+				if transPrev == nil {
+					transPrev = newCanvas(screenW, screenH)
+				}
+				prevSnap := cloneSnap(snap)
+				if transPrevUnlocked {
+					prevSnap["switch"] = "unlocked"
+				} else {
+					prevSnap["switch"] = "locked"
+				}
+				renderScreenPage(prevSnap, hist, transPrev, lang, anim)
+			}
+			elapsed := tick.Sub(transStart)
+			inTrans = !transStart.IsZero() && elapsed < pageTransDur
+			switch {
+			case powerOn:
 				crtPlayOn(dev, canvas, scratch) // 从中心光点展开到这一帧
 				powerOn = false
-			} else {
+			case inTrans:
+				compositeSharedAxis(canvas, transPrev, scratch, elapsed.Seconds()/pageTransDur.Seconds())
+				canvas.invalidate()
+				canvas.flush(dev)
+			default:
+				transStart = time.Time{}
 				copy(canvas.Buf, scratch.Buf)
 				canvas.flush(dev)
 			}
@@ -189,6 +224,10 @@ func (p *panel) screenLoop(backend string) {
 		d := screenTick - time.Since(tick)
 		if d < 5*time.Millisecond {
 			d = 5 * time.Millisecond
+		}
+		// 过渡期间不按常规节拍等待：尽可能连续推帧，减小滑动/淡入的台阶感。
+		if dev != nil && inTrans {
+			d = 2 * time.Millisecond
 		}
 		time.Sleep(d)
 	}

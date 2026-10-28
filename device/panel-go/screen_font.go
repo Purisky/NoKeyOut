@@ -198,6 +198,25 @@ func (f *Font) draw(c *Canvas, x, y int, s string, color uint16) int {
 	return f.width(s)
 }
 
+// drawScaled：整数倍放大的点阵绘制（字模不插值，保持像素边缘）。
+// 返回放大后的宽度。
+func (f *Font) drawScaled(c *Canvas, x, y int, s string, color uint16, scale int) int {
+	if s == "" || scale <= 0 {
+		return 0
+	}
+	top := y
+	if f.Ascent > 0 {
+		top = y - f.Ascent
+	}
+	for _, r := range s {
+		if blob, w, rb, ok := f.glyph(r); ok {
+			c.bitmapScale(x, top, blob, w, rb, f.H, color, scale)
+		}
+		x += f.step(r) * scale
+	}
+	return f.width(s) * scale
+}
+
 func (f *Font) drawRight(c *Canvas, xRight, y int, s string, color uint16) {
 	f.draw(c, xRight-f.width(s), y, s, color)
 }

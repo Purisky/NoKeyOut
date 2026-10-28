@@ -125,7 +125,7 @@ func TestRenderModulesKeepsSlots(t *testing.T) {
 	}
 	c := newCanvas(screenW, screenH)
 	c.fillRect(0, 0, screenW, screenH, screenBG)
-	renderModulesWith(layout.current(), c, newTxt("zh"), testSnap(), newHistory())
+	renderModulesWith(layout.current(), c, newTxt("zh"), testSnap(), newHistory(), animState{})
 
 	heights, gaps := moduleHeights(doc, testSnap())
 	if len(heights) != 2 {

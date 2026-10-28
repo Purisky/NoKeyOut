@@ -21,6 +21,11 @@ var (
 	screenWarn   = rgb565(229, 163, 60)
 	screenDanger = rgb565(229, 83, 75)
 	screenLockBG = rgb565(36, 14, 16)
+	// ADMIN 访问页：OpenDesign 方案的单一青色强调（与 LOCK 页的蓝色区分状态），
+	// 白色只用于产品标识与文字；红色只在超过 15 分钟阈值后出现。
+	adminAccent      = rgb565(40, 196, 178)
+	adminAccentTrack = rgb565(18, 46, 48)
+	adminBarTrack    = rgb565(30, 37, 44)
 	screenDim     = rgb565(58, 68, 84)  // 未连接/未知（暗点）
 	screenDangerDim = rgb565(122, 44, 42) // 锁定脉冲暗相位
 	// 周期档位色（5h 青 / 7d 蓝 / 月 紫）：标签色只做**类型区分**，绝不与
@@ -285,6 +290,23 @@ func (c *Canvas) bitmapAA(x, y int, cov []byte, w, rb, rows int, color uint16) {
 }
 
 // bitmap：1bpp 行位图（每字节 8 列、高位在左）以 color 画到 (x,y)。
+// bitmapScale：1bpp 掩码按整数倍放大（每个墨点画成 scale×scale 方块）。
+// 用于把 11px 字模放大成大字标；保持像素边缘，不做插值。
+func (c *Canvas) bitmapScale(x, y int, blob []byte, w, rb, rows int, color uint16, scale int) {
+	if scale <= 1 {
+		c.bitmap(x, y, blob, w, rb, rows, color)
+		return
+	}
+	for row := 0; row < rows; row++ {
+		for col := 0; col < w; col++ {
+			if blob[row*rb+col/8]&(0x80>>(col%8)) == 0 {
+				continue
+			}
+			c.fillRect(x+col*scale, y+row*scale, scale, scale, color)
+		}
+	}
+}
+
 func (c *Canvas) bitmap(x, y int, blob []byte, w, rb, rows int, color uint16) {
 	hi, lo := byte(color>>8), byte(color)
 	inCanvas := x >= 0 && y >= 0 && x+w <= c.W && y+rows <= c.H

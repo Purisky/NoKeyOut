@@ -189,9 +189,10 @@ type animState struct {
 	slide float64 // 翻页滑入位移 0..1（1=完全在场）
 	ring  float64 // 圆环当前值 0..1（向目标扫掠）
 	pulse float64 // 锁定脉冲相位 0..1
+	now   float64 // 动画时钟（秒）；0=静态（测试/预览默认，保证黄金样本可复现）
 }
 
-func (a animState) static() bool { return a.slide == 0 && a.ring == 0 && a.pulse == 0 }
+func (a animState) static() bool { return a.slide == 0 && a.ring == 0 && a.pulse == 0 && a.now == 0 }
 
 // 不加锁就是数据竞争（map 并发读写直接崩）。
 type History struct {
@@ -379,45 +380,47 @@ func maxi(a, b int) int {
 
 // screenPageAdmin：开关在 ADMIN 位（端口开放）时显示访问地址。
 // LOCK 是正常运行态，走常规模块，不出现本页。
+// 版面强调**产品自身**（图标 + 名称），而不是"ADMIN"字样；开放时长用
+// Material Design 3 的**确定型线性进度指示器**表示（0…15 分钟提醒阈值）。
 func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	sec, ok := snapF(snap, "admin_s")
 	if !ok || sec < 0 {
 		sec = 0
 	}
 	over := sec >= adminWarnSeconds
-	// 1Hz 闪烁（亮 500ms / 暗 500ms）：只在超过 15 分钟后启动。
-	blink := !over || int(sec*2)%2 == 0
-	border, adminCol, warnCol := screenAccent, screenAccent, screenMuted
+	timeCol, hintCol := screenFG, screenMuted
 	if over {
-		border, adminCol, warnCol = screenDangerDim, screenMuted, screenWarn
-		if blink {
-			border, adminCol, warnCol = screenDanger, screenDanger, screenDanger
-		}
+		timeCol, hintCol = screenDanger, screenWarn
 	}
 
 	c.clear(screenBG)
-	drawScreenCard(c, screenMX, 36, screenW-2*screenMX, 168)
-	c.rect(screenMX, 36, screenW-2*screenMX, 168, border)
+	c.rect(0, 0, screenW, screenH, screenBorder) // 单层描边，不做嵌套卡片
 
-	// 开放指示点
-	c.fillRect(screenW/2-3, 52, 6, 6, border)
-	screenCenter(c, screenW/2, 76, "ADMIN", adminCol)
+	// 产品图标：与字标共用同一条流光色带。
+	drawMaskFlow(c, (screenW-productMarkSize)/2, 18, productMark48, productMarkSize,
+		productMarkSize/8, productMarkSize, anim.now)
+
+	// 大字标：Silkscreen（与正文 JetBrains Mono 区分）；颜色是流动渐变 + 高光扫过。
+	word := "NOKEYOUT"
+	drawWordmarkFlow(c, screenW/2, 74, word, anim.now)
 
 	url := snapS(snap, "url")
 	if url == "" {
 		url = "https://<device-ip>:8443"
 	}
-	SM.drawCenter(c, screenW/2, 106, screenTrunc(url, screenW-2*screenMX-16), screenFG)
-	SM.drawCenter(c, screenW/2, 126, "ssh :22", screenMuted)
-	screenCenter(c, screenW/2, 146, fmt.Sprintf("%s %s", t.get("admin_open"), fmtAdminDur(sec)), warnCol)
-	hint, hintCol := t.get("admin_hint"), screenMuted
+	SM.drawCenter(c, screenW/2, 108, screenTrunc(url, screenW-32), screenFG)
+	SM.drawCenter(c, screenW/2, 122, "ssh :22", screenMuted)
+
+	// 倒计时：NUM 数字字体（24px），只显示时长，居中。
+	drawCountdown(c, screenW/2, 146, fmtAdminDur(sec), timeCol, 1)
+
+	hint := t.get("admin_hint")
 	if over {
-		hint, hintCol = t.get("admin_over"), warnCol
+		hint = t.get("admin_over")
 	}
-	screenCenter(c, screenW/2, 168, screenTrunc(hint, screenW-2*screenMX-16), hintCol)
+	screenCenter(c, screenW/2, 204, screenTrunc(hint, screenW-32), hintCol)
 }
 
-// fmtAdminDur：端口开放计时。mm:ss（<1h），h:mm:ss（≥1h）。
 func fmtAdminDur(sec float64) string {
 	if sec < 0 {
 		sec = 0
@@ -470,7 +473,7 @@ func uiRenderWith(name string, snap map[string]any, hist *History, c *Canvas, pr
 		screenPageError(c, t, snap)
 		return
 	}
-	renderModulesWith(doc, c, t, snap, hist)
+	renderModulesWith(doc, c, t, snap, hist, anim)
 }
 
 // progLine：轮播进度线（页头下沿细线）。

@@ -182,7 +182,17 @@ type stats struct {
 	err      string
 	stop     chan struct{}
 	once     sync.Once
+
+	// 供应商活动指示：magpie 的 lastServedAt 给出"最近服务过的供应商"，
+	// 今日 tokens 增长说明刚刚又发生了一次调用 → 在 activeUntil 前点亮该行图标。
+	lastProvider string
+	lastTokens   int64
+	activeUntil  time.Time
 }
+
+// providerActiveHold：一次调用后，"该供应商正在被使用"指示保持的时长。
+// 覆盖 2s 用量轮询的抖动，又不至于让图标长时间空转。
+const providerActiveHold = 8 * time.Second
 
 func newStats(c *cfg) *stats {
 	h := newUsageHist(c.usageHistPath)
@@ -288,6 +298,18 @@ func (s *stats) pollUsage() {
 	defer s.mu.Unlock()
 	if today != nil {
 		s.cur = today
+		// 今日 tokens 增长 = 刚刚又发生了一次调用。用 magpie 的“最近服务供应商”
+		// 归因，点亮该行图标 providerActiveHold；没有新调用则到期自动熄灭。
+		var tok int64
+		if tt, ok := today["tokens_today"].(map[string]any); ok {
+			in, _ := tt["input"].(int64)
+			out, _ := tt["output"].(int64)
+			tok = in + out
+		}
+		if s.lastTokens > 0 && tok > s.lastTokens && s.lastProvider != "" {
+			s.activeUntil = now.Add(providerActiveHold)
+		}
+		s.lastTokens = tok
 	}
 	if len(usage) > 0 {
 		s.usage = usage
@@ -379,6 +401,9 @@ func (s *stats) pollQuotas() {
 			AccountID    string   `json:"accountId"`
 			AccountNames []string `json:"accountNames"`
 			Last         bool     `json:"last"` // magpie 标"最近服务过的那一个"
+			// LastServedAt：magpie 记录的最近一次调用时间（RFC3339）。
+			// 用于"供应商正在被调用"的图标动画归因。
+			LastServedAt string `json:"lastServedAt"`
 			// 固定余额（key 型供应商）：magpie 给 balance，或 balances[]（可能多币种）
 			Balance  *float64 `json:"balance"`
 			Currency string   `json:"currency"`
@@ -395,7 +420,17 @@ func (s *stats) pollQuotas() {
 		return
 	}
 	var pools []Pool
+	var newestAt time.Time
+	var newestProvider string
 	for _, p := range q.Data {
+		// lastServedAt：取所有供应商里最新的一次调用，作为"最近使用"。
+		if ts, err := time.Parse(time.RFC3339Nano, p.LastServedAt); err == nil {
+			if ts.After(newestAt) {
+				newestAt, newestProvider = ts, p.Provider
+			}
+		} else if p.Last && newestProvider == "" {
+			newestProvider = p.Provider
+		}
 		name := p.Name
 		if name == "" {
 			name = p.Provider
@@ -463,6 +498,9 @@ func (s *stats) pollQuotas() {
 	sortPools(pools)
 	s.mu.Lock()
 	s.pools = poolsToAny(pools)
+	if newestProvider != "" {
+		s.lastProvider = newestProvider
+	}
 	s.mu.Unlock()
 }
 
@@ -554,6 +592,9 @@ func (s *stats) snapshot() map[string]any {
 		"dash":         s.dashSnapLocked(),
 		"url":          panelURL,
 		"error":        s.err,
+		// 活动供应商：渲染层据此给该行图标加不确定进度指示器（M3）。
+		"active_provider": s.lastProvider,
+		"active_until":    s.activeUntil.Unix(),
 	}
 }
 

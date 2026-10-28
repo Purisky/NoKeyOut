@@ -46,7 +46,9 @@
     const pulse = a.pulse == null ? 0 : Number(a.pulse);
     const ring = a.ring == null ? 0.62 : Number(a.ring);
     const slide = a.slide == null ? 1 : Number(a.slide);
-    m.render(JSON.stringify(state), img.data, pulse, ring, slide);
+    // now：动画时钟（秒）。M3 不确定圆形指示器的 5s 周期以它为相位基准。
+    const now = a.now == null ? performance.now() / 1000 : Number(a.now);
+    m.render(JSON.stringify(state), img.data, pulse, ring, slide, now);
     ctx.putImageData(img, 0, 0);
   }
 

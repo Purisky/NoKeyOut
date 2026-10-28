@@ -70,3 +70,18 @@ func TestPollQuotasFeedsPoolsRenderer(t *testing.T) {
 		t.Fatalf("剩余 0%% 应为 crit，got %v", got)
 	}
 }
+
+// 活动供应商归因：magpie 的 lastServedAt 决定"最近使用"，渲染层据此点亮图标。
+func TestActiveProviderFromLastServedAt(t *testing.T) {
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(quotaFixture))
+	}))
+	defer gw.Close()
+	s := &stats{cfg: &cfg{gatewayBase: gw.URL, panelGatewayKey: "k"}, interval: 0,
+		stop: make(chan struct{})}
+	s.pollQuotas()
+	snap := s.snapshot()
+	if got := snapS(snap, "active_provider"); got != "opencode-go" {
+		t.Fatalf("active_provider = %q，want opencode-go", got)
+	}
+}

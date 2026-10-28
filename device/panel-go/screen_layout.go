@@ -161,7 +161,8 @@ type quotaPick struct {
 type moduleCfg struct {
 	Quotas  []quotaPick
 	Usage   string
-	Compact bool // 配额简易模式
+	Compact bool    // 配额简易模式
+	Now     float64 // 动画时钟（秒）；0=静态
 }
 
 // pickRows：按"配额自定义"列表挑行，顺序即屏上顺序；列表为空 = 自动（原样返回）。
@@ -346,8 +347,8 @@ func netProblem(snap map[string]any) string {
 
 // renderModulesWith：按**给定**布局把模块自顶向下堆叠（真机、WASM、预览共用）。
 // 配额模块在栈内共享行游标（quotaPlan）：详细/简易同屏时简易接续详细，不重复行。
-func renderModulesWith(doc layoutDoc, c *Canvas, t *Txt, snap map[string]any, hist *History) {
-	cfg := moduleCfg{Quotas: doc.Quotas, Usage: doc.Usage, Compact: doc.Compact}
+func renderModulesWith(doc layoutDoc, c *Canvas, t *Txt, snap map[string]any, hist *History, anim animState) {
+	cfg := moduleCfg{Quotas: doc.Quotas, Usage: doc.Usage, Compact: doc.Compact, Now: anim.now}
 	heights, gaps := moduleHeights(doc, snap)
 	type slot struct {
 		id   string
@@ -535,10 +536,11 @@ func renderModuleQuota(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 		return
 	}
 	drawRow := func(dst *Canvas, ry, i int) {
+		active := providerActive(snap, snapS(rows[i], "provider"))
 		if cfg.Compact {
-			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0)
+			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now)
 		} else {
-			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0)
+			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now)
 		}
 	}
 	// 装得下：**行高固定**（36px/20px 的设计单元，不随容器拉高），且**顶部对齐**

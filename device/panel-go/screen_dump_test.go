@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestVisualDump(t *testing.T) {
@@ -33,7 +34,7 @@ func TestVisualDump(t *testing.T) {
 	dump := func(name string, doc layoutDoc, s map[string]any, lang string) {
 		c := newCanvas(screenW, screenH)
 		c.clear(screenBG)
-		renderModulesWith(doc, c, newTxt(lang), s, hist)
+		renderModulesWith(doc, c, newTxt(lang), s, hist, animState{})
 		if err := os.WriteFile(filepath.Join(dir, name+".png"), canvasPNG(c, 3), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -78,6 +79,26 @@ func TestVisualDump(t *testing.T) {
 	}, snap, "zh")
 	// 状态整屏页
 	dumpFull("07_admin", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443"}, "zh")
+	dumpFull("07b_admin_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "zh")
+	{
+		c := newCanvas(screenW, screenH)
+		uiRender("main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0},
+			hist, c, 0, "zh", "12:34", animState{now: 1.1})
+		if err := os.WriteFile(filepath.Join(dir, "07d_admin_anim.png"), canvasPNG(c, 3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 供应商活动：图标外圈 M3 不确定圆形指示器（动画时钟固定 1.1s 便于目检）
+	snapAct := testSnap()
+	snapAct["active_provider"] = "opencode-go"
+	snapAct["active_until"] = nowFn().Add(time.Hour).Unix()
+	{
+		c := newCanvas(screenW, screenH)
+		uiRender("main", snapAct, hist, c, 0, "zh", "12:34", animState{now: 1.1})
+		if err := os.WriteFile(filepath.Join(dir, "07c_provider_active.png"), canvasPNG(c, 3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	dumpFull("08_nonet", "main", map[string]any{"net": map[string]any{"eth": "down", "inet": false}}, "zh")
 	dumpFull("09_error", "main", map[string]any{"error": "connect: refused", "usage_age_s": 12.0}, "zh")
 	// 无数据

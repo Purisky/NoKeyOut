@@ -59,6 +59,9 @@ func wasmRender(this js.Value, args []js.Value) any {
 	if len(args) > 4 {
 		anim.slide = args[4].Float()
 	}
+	if len(args) > 5 {
+		anim.now = args[5].Float()
+	}
 	if anim.slide <= 0 {
 		anim.slide = 1
 	}

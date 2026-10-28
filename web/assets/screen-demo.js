@@ -26,7 +26,7 @@
 
   /* 开关 ON（断路）= LOCK = 正常运行 */
   const isLocked = () => !sw || !!sw.checked;
-  /* 端口开放（ADMIN）计时起点：屏上显示，超过 15 分钟开始闪烁。 */
+  /* 端口开放（ADMIN）计时起点：屏上显示，15 分钟阈值内进度条填充，超时转红。 */
   let adminAt = isLocked() ? 0 : Date.now();
 
   function snapshot() {
@@ -62,8 +62,8 @@
 
   function draw(t) {
     if (!powered || animating) { raf = requestAnimationFrame(draw); return; }
-    /* LOCK 走 30fps 脉冲；ADMIN 只需 4fps 更新计时与 1Hz 闪烁。 */
-    const every = isLocked() ? 33 : 250;
+    /* 两种页面都 30fps：ADMIN 的图标外圈是常驻动画（M3 不确定圆形指示器）。 */
+    const every = 33;
     if (t - last >= every) {
       last = t;
       const pulse = (Math.sin(t / 430) + 1) / 2;
