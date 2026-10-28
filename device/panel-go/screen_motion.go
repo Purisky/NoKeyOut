@@ -145,3 +145,44 @@ func compositeSharedAxis(dst, from, to *Canvas, p float64) {
 	blendShift(dst, from, -int(float64(pageSlidePx)*e), 1-e)
 	blendShift(dst, to, pageSlidePx-int(float64(pageSlidePx)*e), e)
 }
+
+// perimeterAt：矩形边框上参数 t∈[0,1) 对应的像素位置（从左上角顺时针）。
+func perimeterAt(w, h int, t float64) (int, int) {
+	per := float64(2 * (w + h))
+	d := math.Mod(t, 1) * per
+	if d < 0 {
+		d += per
+	}
+	if d < float64(w) {
+		return int(d), 0
+	}
+	d -= float64(w)
+	if d < float64(h) {
+		return w - 1, int(d)
+	}
+	d -= float64(h)
+	if d < float64(w) {
+		return w - 1 - int(d), h - 1
+	}
+	d -= float64(w)
+	return 0, h - 1 - int(d)
+}
+
+// drawAlertBorder：超时告警边框。三段高亮沿边框移动，长度随不确定指示器的扫掠变化。
+func drawAlertBorder(c *Canvas, now float64) {
+	c.rect(0, 0, screenW, screenH, screenDanger)
+	if now <= 0 {
+		return
+	}
+	start, sweep := m3Indeterminate(now)
+	phase := math.Mod(start/360, 1)
+	per := 2 * (screenW + screenH)
+	segLen := (0.10 + 0.18*sweep) * float64(per)
+	for i := 0; i < 3; i++ {
+		base := phase + float64(i)/3
+		for d := 0.0; d < segLen; d += 1 {
+			x, y := perimeterAt(screenW, screenH, base+d/float64(per))
+			c.fillRect(x-1, y-1, 3, 3, screenDanger)
+		}
+	}
+}

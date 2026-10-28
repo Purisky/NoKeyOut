@@ -7,7 +7,7 @@ window.registerLevel({
   title: { zh: "第四关 · ST7789 三步点亮", en: "L4 · ST7789 Three-Step Bring-Up" },
   brief: {
     disciplines: [
-      { zh: "不要一次全接：Step1 只电源与背光 → Step2 SPI+DC+RST → Step3 PWM 背光", en: "Never wire it all at once: Step1 power+backlight → Step2 SPI+DC+RST → Step3 PWM backlight" },
+      { zh: "不要一次全接：Step1 只电源与背光 → Step2 SPI+DC+RST → Step3 背光常亮", en: "Never wire it all at once: Step1 power+backlight → Step2 SPI+DC+RST → Step3 steady backlight" },
       { zh: "每步都要有可解释的现象再往下", en: "Every step must have an explainable observation before continuing" },
       { zh: "认丝印，不认线色（SDA/SCL 与 MOSI/CLK 叫法混用是常态）", en: "Trust silkscreen, not wire color (SDA/SCL vs MOSI/CLK naming is routinely mixed up)" }
     ],
@@ -70,7 +70,7 @@ window.registerLevel({
     },
     badge: {
       title: { zh: "第四关 · 通关", en: "Level 4 · Cleared" },
-      sub: { zh: "ST7789 三步点亮 —— 白屏→色块→PWM", en: "ST7789 bring-up — white→color blocks→PWM" },
+      sub: { zh: "ST7789 三步点亮 —— 白屏→色块→常亮", en: "ST7789 bring-up — white→color blocks→steady on" },
       tag: { zh: "解锁方式：亲眼看见，不是“应该亮了”", en: "Unlocked by seeing it, not by “it should be on”" }
     }
   }

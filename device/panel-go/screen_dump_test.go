@@ -93,6 +93,14 @@ func TestVisualDump(t *testing.T) {
 	dumpFull("07f_admin_en_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "en")
 	{
 		c := newCanvas(screenW, screenH)
+		uiRender("main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0},
+			hist, c, 0, "zh", "12:34", animState{now: 1.1})
+		if err := os.WriteFile(filepath.Join(dir, "07h_admin_alert.png"), canvasPNG(c, 3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	{
+		c := newCanvas(screenW, screenH)
 		uiRender("main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0},
 			hist, c, 0, "zh", "12:34", animState{now: 1.1})
 		if err := os.WriteFile(filepath.Join(dir, "07d_admin_anim.png"), canvasPNG(c, 3), 0o644); err != nil {

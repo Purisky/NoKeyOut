@@ -393,7 +393,11 @@ func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	}
 
 	c.clear(screenBG)
-	c.rect(0, 0, screenW, screenH, screenBorder)
+	if over {
+		drawAlertBorder(c, anim.now)
+	} else {
+		c.rect(0, 0, screenW, screenH, screenBorder)
+	}
 
 	drawMaskFlow(c, (screenW-productMarkSize)/2, 18, productMark48, productMarkSize,
 		productMarkSize/8, productMarkSize, anim.now)

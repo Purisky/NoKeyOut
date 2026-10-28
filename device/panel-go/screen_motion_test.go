@@ -106,3 +106,19 @@ func TestSwirlColorVariety(t *testing.T) {
 		t.Fatalf("颜色过于单一：%d 种", len(seen))
 	}
 }
+
+// 超时告警：边缘高亮随动画时钟移动（静态帧只有细边框）。
+func TestAlertBorderAnimates(t *testing.T) {
+	base := newCanvas(screenW, screenH)
+	drawAlertBorder(base, 0)
+	a := newCanvas(screenW, screenH)
+	drawAlertBorder(a, 1.1)
+	b := newCanvas(screenW, screenH)
+	drawAlertBorder(b, 2.5)
+	if bytes.Equal(a.Buf, b.Buf) {
+		t.Fatal("告警边框没有动起来")
+	}
+	if bytes.Equal(base.Buf, a.Buf) {
+		t.Fatal("动画态应与静态边框不同")
+	}
+}

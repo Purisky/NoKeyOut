@@ -38,7 +38,7 @@ window.registerLevel({
       dont: { zh: "认准 Plus：别买成无排针的 NEO3 基础版", en: "Make sure it is the Plus — not the headerless base NEO3." } },
     { id: "sw", qty: 1,
       spec: { zh: "拨动开关，锁存 2 档，**推荐带 10k 上拉的开关模块**（2.54 排针）；裸开关也行（改用 SoC 内部上拉）", en: "Latching 2-position toggle; a module WITH 10k pull-up (2.54mm header) is preferred; a bare switch also works (using the SoC's internal pull-up)" },
-      why: { zh: "断路（开关 ON）= 内部/外置上拉把它拉高 = LOCKED；闭合（开关 OFF）= 把 GPIO4_A5 短到 GND = ADMIN。拔线/断线同样落在 LOCKED（失效锁定）。引脚读失败时 switchd 保持上一次状态", en: "Open (switch ON) = pulled HIGH by the internal/external pull-up = LOCKED; closed (switch OFF) = shorts GPIO4_A5 to GND = ADMIN. A pulled or broken wire also fails to LOCKED. On a pin read failure switchd keeps the last state." },
+      why: { zh: "断路（开关 OFF）= 内部/外置上拉把它拉高 = LOCKED；闭合（开关 ON）= 把 GPIO4_A5 短到 GND = ADMIN。拔线/断线同样落在 LOCKED（失效锁定）。引脚读失败时 switchd 保持上一次状态", en: "Open (switch OFF) = pulled HIGH by the internal/external pull-up = LOCKED; closed (switch ON) = shorts GPIO4_A5 to GND = ADMIN. A pulled or broken wire also fails to LOCKED. On a pin read failure switchd keeps the last state." },
       channel: { zh: "通用电子元件渠道", en: "General electronics supplier" },
       dont: { zh: "别买内置**下拉**的模块（常为低电平）→ 恒 ADMIN（管理面永远开着），比不装更危险；别买带 LED 的模块", en: "Do NOT buy pull-DOWN modules (held low) — permanently ADMIN (panel always open), worse than no switch; no LED modules." } },
     { id: "wires", qty: 2,
@@ -119,7 +119,7 @@ window.registerLevel({
       { n: 4,  label: "5V ⚠",       cls: "danger" },
       { n: 5,  label: "I2C5",       cls: "keep" },
       { n: 6,  label: "GND",        cls: "gnd" },
-      { n: 7,  label: "PWM0_M0 ★", cls: "target" },
+      { n: 7,  label: "PWM0_M0（不用）", cls: "keep" },
       { n: 8,  label: "UART1_TX（不用）", cls: "keep" },
       { n: 9,  label: "GND ★",      cls: "gnd" },
       { n: 10, label: "UART1_RX（不用）", cls: "keep" },
@@ -129,7 +129,7 @@ window.registerLevel({
       { n: 14, label: "GND",        cls: "gnd" },
       { n: 15, label: "屏DC",       cls: "keep" },
       { n: 16, label: "",           cls: "plain" },
-      { n: 17, label: "3V3",        cls: "power" },
+      { n: 17, label: "3V3 ★（背光）", cls: "target" },
       { n: 18, label: "",           cls: "plain" },
       { n: 19, label: "SPI1 MOSI",  cls: "keep" },
       { n: 20, label: "GND",        cls: "gnd" },
@@ -147,7 +147,7 @@ window.registerLevel({
       { id: "scr", name: { zh: "ST7789 屏模块（已焊排针版）", en: "ST7789 module (header pre-soldered)" },
         leads: ["VCC", "GND", "BLK", "CLK", "MOSI", "CS", "DC", "RST"],
         module: { pcb: [27.8, 27.4], glass: [26, 26], active: [23.4, 23.4] },
-        note: { zh: "免焊：出厂已焊 2.54 排针，杜邦线直插；BLK 接 pin7（PWM）", en: "Solderless: header pre-soldered, plug duponts straight in; BLK goes to pin7 (PWM)." } }
+        note: { zh: "免焊：出厂已焊 2.54 排针，杜邦线直插；BLK 接 pin17（3V3 常亮）", en: "Solderless: header pre-soldered, plug duponts straight in; BLK goes to pin17 (3V3, always on)." } }
     ],
     steps: [
       { edge: ["sw:C", "pin:11"],
@@ -166,13 +166,13 @@ window.registerLevel({
           { zh: "上电前必量：开关拨到 C-B 闭合时 pin11↔pin9 ≈0Ω", en: "Measure before powering: with C-B closed, pin11↔pin9 ≈0Ω." },
           { zh: "明确动作：开关外侧引线 B → pin9（GND，灰色针）", en: "Exact action: switch outer lead B → pin9 (GND, grey pillar)." }
         ] },
-      { edge: ["scr:BLK", "pin:7"],
-        observe: { zh: "背光接 pin7（PWM0_M0）：先给 100% 占空比当常亮，用来确认「屏亮不亮」。", en: "Backlight goes to pin7 (PWM0_M0) at 100% duty, i.e. steady on, to answer “does it light”." },
+      { edge: ["scr:BLK", "pin:17"],
+        observe: { zh: "背光直接接 3V3（pin17）：常亮，用来确认「屏亮不亮」。", en: "Backlight goes straight to 3V3 (pin17): always on, to answer “does it light”." },
         typicalFail: { zh: "BLK 接 5V → 背光过流，亮度衰减甚至烧背光。", en: "BLK on 5V over-drives the backlight." },
         hints: [
-          { zh: "pin7 是 PWM 脚，驱动里给 100% 就是常亮；不占 3V3 那一路。", en: "pin7 is a PWM pin: 100% duty = steady on, and it leaves the 3V3 pin free." },
-          { zh: "L4 会用它调亮度（占空比 10–100%）。", en: "L4 uses it for brightness control (10–100% duty)." },
-          { zh: "明确动作：屏 BLK → pin7（PWM0_M0）。", en: "Exact action: screen BLK → pin7 (PWM0_M0)." }
+          { zh: "pin17 是 3V3，和 pin1 同一路。", en: "pin17 is 3V3, the same rail as pin1." },
+          { zh: "固件 SCREEN_BL=-1：不控背光，所以 BLK 必须接常亮 3V3。", en: "Firmware sets SCREEN_BL=-1, so BLK must be tied to steady 3V3." },
+          { zh: "明确动作：屏 BLK → pin17（3V3，琥珀色针）。", en: "Exact action: screen BLK → pin17 (3V3, amber pillar)." }
         ] },
       { edge: ["scr:CS", "pin:22"],
         observe: { zh: "CS = pin22（SPI1_CSN1）→ 通常 /dev/spidev1.1。", en: "CS is pin22 (SPI1_CSN1) → usually /dev/spidev1.1." },

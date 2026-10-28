@@ -279,7 +279,7 @@ try {
     JSON.stringify({ sw0, sw1, sw2 }));
 
   /* S5 屏幕 8 根 */
-  const SCREEN = [['scr:BLK', 'pin:7'], ['scr:CS', 'pin:22'], ['scr:DC', 'pin:15'], ['scr:RST', 'pin:13'],
+  const SCREEN = [['scr:BLK', 'pin:17'], ['scr:CS', 'pin:22'], ['scr:DC', 'pin:15'], ['scr:RST', 'pin:13'],
     ['scr:MOSI', 'pin:19'], ['scr:CLK', 'pin:23'], ['scr:VCC', 'pin:1'], ['scr:GND', 'pin:6']];
   for (let i = 0; i < SCREEN.length; i++) {
     const [a, b] = SCREEN[i];
@@ -484,7 +484,7 @@ try {
   await cdp.waitFor(`window.NKView3D.screenDebug().visible`, 3000);
   const sc1 = await cdp.eval(`({ pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
   const camScreen1 = await cdp.eval(`window.NKView3D.debug().cam`);
-  ok('S6e 翻屏后点亮：ON（断路）=LOCK 显示常规页', sc1.pose === 'over' && sc1.dbg.visible === true &&
+  ok('S6e 翻屏后点亮：OFF（断路）=LOCK 显示常规页', sc1.pose === 'over' && sc1.dbg.visible === true &&
     sc1.dbg.source === 'nokey', JSON.stringify(sc1));
   ok('S6e2 翻屏时镜头正对屏幕并纳入整板', JSON.stringify(camScreen0) !== JSON.stringify(camScreen1) &&
     Math.abs(camScreen1.pitch - 88) < 0.5 && Math.abs(camScreen1.target[2] - 124) < 0.5 &&
@@ -572,11 +572,11 @@ try {
   ok('S6e5 USR 再按亮屏、完成按钮恢复', onScreen.visible === true && doneOn === false, JSON.stringify({ onScreen, doneOn }));
   await cdp.pick('sw:toggle');
   const scAdmin = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
-  ok('S6e6 OFF（闭合）=ADMIN 显示 IP 页',
-    scAdmin.st.sw === false && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
+  ok('S6e6 ON（闭合）=ADMIN 显示 IP 页',
+    scAdmin.st.sw === true && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
   await cdp.pick('sw:toggle');
   const scNoKey = await cdp.eval(`window.NKView3D.screenDebug()`);
-  ok('S6e6d ON（断路）=LOCK 显示常规页', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
+  ok('S6e6d OFF（断路）=LOCK 显示常规页', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
 
   await cdp.click('#screen-done');
   await cdp.waitFor(`!document.getElementById('complete').hidden`, 5000);
