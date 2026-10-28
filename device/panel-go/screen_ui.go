@@ -412,7 +412,7 @@ func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	if over {
 		hint = t.get("admin_over")
 	}
-	screenCenter(c, screenW/2, 204, screenTrunc(hint, screenW-32), hintCol)
+	screenCenter(c, screenW/2, 204, screenTrunc(hint, screenW-16), hintCol)
 }
 
 func fmtAdminDur(sec float64) string {

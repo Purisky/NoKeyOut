@@ -535,3 +535,15 @@ func TestSlideKeepsChrome(t *testing.T) {
 		t.Fatal("body 应发生水平位移")
 	}
 }
+
+// ADMIN 页文案必须放得下（英文版更宽）。
+func TestAdminTextFits(t *testing.T) {
+	for _, lang := range []string{"zh", "en"} {
+		txt := newTxt(lang)
+		for _, k := range []string{"admin_hint", "admin_over"} {
+			if w := mixedWidth(txt.get(k), SM, CJKFont); w > screenW-16 {
+				t.Fatalf("%s/%s 超宽：%d > %d", lang, k, w, screenW-16)
+			}
+		}
+	}
+}

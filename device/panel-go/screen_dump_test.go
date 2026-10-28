@@ -80,6 +80,8 @@ func TestVisualDump(t *testing.T) {
 	// 状态整屏页
 	dumpFull("07_admin", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443"}, "zh")
 	dumpFull("07b_admin_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "zh")
+	dumpFull("07e_admin_en", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0}, "en")
+	dumpFull("07f_admin_en_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "en")
 	{
 		c := newCanvas(screenW, screenH)
 		uiRender("main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0},
