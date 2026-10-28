@@ -15,10 +15,10 @@
       const go = new Go();
       let instance;
       try {
-        const r = await fetch(base + 'nkscreen.wasm?v=18');
+        const r = await fetch(base + 'nkscreen.wasm?v=19');
         instance = await WebAssembly.instantiateStreaming(r, go.importObject);
       } catch (e) {
-        const buf = await (await fetch(base + 'nkscreen.wasm?v=18')).arrayBuffer();
+        const buf = await (await fetch(base + 'nkscreen.wasm?v=19')).arrayBuffer();
         instance = await WebAssembly.instantiate(buf, go.importObject);
       }
       go.run(instance.instance); // 永不 resolve，不要 await

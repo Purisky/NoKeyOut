@@ -2,11 +2,19 @@ package main
 
 import "math"
 
-// flowPalette：teal → blue → violet。
+// flowPalette：青绿 → 靛蓝 → 品红。
 var flowPalette = [3][3]float64{
-	{40.0 / 255, 196.0 / 255, 178.0 / 255},
-	{76.0 / 255, 141.0 / 255, 255.0 / 255},
-	{177.0 / 255, 92.0 / 255, 255.0 / 255},
+	{0.0, 0.78, 0.66},
+	{0.24, 0.35, 1.0},
+	{1.0, 0.24, 0.60},
+}
+
+// rotateHue：绕灰轴旋转色相（弧度），用于拉开色域。
+func rotateHue(r, g, b, a float64) (float64, float64, float64) {
+	c, s := math.Cos(a), math.Sin(a)
+	return (0.299+0.701*c+0.168*s)*r + (0.587-0.587*c+0.330*s)*g + (0.114-0.114*c-0.497*s)*b,
+		(0.299-0.299*c-0.328*s)*r + (0.587+0.413*c+0.035*s)*g + (0.114-0.114*c+0.292*s)*b,
+		(0.299-0.300*c+1.250*s)*r + (0.587-0.588*c-1.050*s)*g + (0.114+0.886*c-0.203*s)*b
 }
 
 // swirlAt：屏幕像素 (x,y) 在 now 时刻的漩涡取色；now<=0 返回纯色。
@@ -45,12 +53,16 @@ func swirlAt(x, y int, now float64) uint16 {
 	c3p := 1 - math.Min(1, c1p+c2p)
 	light := (0.4-0.2)*math.Max(c1p*5-4, 0) + 0.4*math.Max(c2p*5-4, 0)
 
-	var rgb [3]uint8
+	var out [3]float64
 	for ch := 0; ch < 3; ch++ {
-		v := (0.3/contrast)*flowPalette[0][ch] +
+		out[ch] = (0.3/contrast)*flowPalette[0][ch] +
 			(1-0.3/contrast)*(flowPalette[0][ch]*c1p+flowPalette[1][ch]*c2p+flowPalette[2][ch]*c3p) +
 			light
-		rgb[ch] = uint8(math.Max(0, math.Min(1, v)) * 255)
+	}
+	out[0], out[1], out[2] = rotateHue(out[0], out[1], out[2], 0.70*math.Sin(now*0.4)+0.35*math.Sin(ang*2))
+	var rgb [3]uint8
+	for ch := 0; ch < 3; ch++ {
+		rgb[ch] = uint8(math.Max(0, math.Min(1, out[ch])) * 255)
 	}
 	return rgb565(rgb[0], rgb[1], rgb[2])
 }

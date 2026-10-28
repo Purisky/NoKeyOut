@@ -95,3 +95,14 @@ func TestWordmarkFlowColors(t *testing.T) {
 		t.Fatal("图标的流光没有生效")
 	}
 }
+
+// 流光取色在字标范围内应有明显色相差异（不是单色渐变）。
+func TestSwirlColorVariety(t *testing.T) {
+	seen := map[uint16]bool{}
+	for x := 20; x < 220; x += 4 {
+		seen[swirlAt(x, 80, 1.3)] = true
+	}
+	if len(seen) < 8 {
+		t.Fatalf("颜色过于单一：%d 种", len(seen))
+	}
+}
