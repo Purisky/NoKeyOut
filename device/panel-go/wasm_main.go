@@ -4,9 +4,9 @@ package main
 
 // wasm_main.go —— 把硬件屏同一套 Go 渲染器编成 WebAssembly。
 //
-// 构建：
-//   GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o ../../web/assets/screen/nkscreen.wasm .
-//   cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" ../../web/assets/screen/
+// 构建（TinyGo 0.35 + Go 1.19–1.23）：
+//   tinygo build -target=wasm -o ../../web/assets/screen/nkscreen.wasm .
+//   cp "$(tinygo env TINYGOROOT)/targets/wasm_exec.js" ../../web/assets/screen/
 //
 // JS 侧只做三件事：准备 snapshot JSON、传入 RGBA 目标缓冲、把结果贴到 canvas。
 // 页面内容、字体、配额条、时间追赶标记、CRT/翻页/圆环等全部仍由原生代码生成。
