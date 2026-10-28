@@ -18,6 +18,7 @@ var providerMarkRules = []struct {
 	match []string
 	mark  providerMark
 }{
+	{[]string{"opendesign", "open design"}, providerMark{rgb565(239, 231, 210), "O", "opendesign"}},
 	{[]string{"opencode"}, providerMark{rgb565(120, 134, 168), "O", "opencode"}},
 	{[]string{"openai"}, providerMark{rgb565(16, 163, 127), "O", "openai"}},
 	{[]string{"anthropic", "claude"}, providerMark{rgb565(204, 120, 92), "A", "anthropic"}},

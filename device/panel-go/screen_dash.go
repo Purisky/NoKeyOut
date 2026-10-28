@@ -36,17 +36,17 @@ const (
 
 // Pool：屏上一条配额窗口。
 type Pool struct {
-	Name     string // 供应商显示名，如 "OpenCode Go"
-	Provider string // 供应商 id，如 "opencode-go"
-	Window   string // 窗口名，如 "7 days"（上游给什么就显示什么）
-	Kind     string // "plan" 等
-	UsedPct     float64 // 已用 %（上游 used）
-	RemainPct   float64 // 剩余 %（上游 remaining）
-	HasVal      bool    // 上游给了百分比才有值
-	State       poolState
-	Reset       time.Time // 下次重置时刻
-	HasReset    bool
-	Period      time.Duration // 窗口周期（由窗口名解析；0=未知）
+	Name      string  // 供应商显示名，如 "OpenCode Go"
+	Provider  string  // 供应商 id，如 "opencode-go"
+	Window    string  // 窗口名，如 "7 days"（上游给什么就显示什么）
+	Kind      string  // "plan" 等
+	UsedPct   float64 // 已用 %（上游 used）
+	RemainPct float64 // 剩余 %（上游 remaining）
+	HasVal    bool    // 上游给了百分比才有值
+	State     poolState
+	Reset     time.Time // 下次重置时刻
+	HasReset  bool
+	Period    time.Duration // 窗口周期（由窗口名解析；0=未知）
 
 	//   "period"  = 周期窗口（used/remaining 是百分比，可能有 resetsAt）
 	//   "balance" = **固定余额**（key 型供应商账上还有多少钱；没有周期、没有重置，百分比无意义）
@@ -55,13 +55,14 @@ type Pool struct {
 	// 上游没给就空（key 型供应商通常一个账号一个 provider id，天然可区分）。
 	Account string
 
-	Mode      string  // "period" | "balance"
+	Mode string // "period" | "balance"
 	// Err：**上游明确报错**（magpie 的 data[].error，如密钥过期 401）。
 	// 有它的时候这一行照常显示，错误写在条里——绝不能因为取不到数就把整条抹掉。
-	Err       string
-	Amount    float64 // 余额金额（Mode=balance）
-	Unit      string  // 币种/单位（"USD" 等；上游没给就空）
-	HasAmount bool
+	Err         string
+	Amount      float64 // 余额金额（Mode=balance；能从上游文本解析出来才有）
+	Unit        string  // 币种/单位（"USD" 等；上游没给就空）
+	HasAmount   bool
+	BalanceText string // 上游原文（"$12.34" / "6,291 points left"）；屏上优先显示它
 }
 
 // remainState：剩余 % → 告警级别。
@@ -91,13 +92,14 @@ func buildPool(provider, name, kind, window string, usedPct, remainPct float64, 
 
 // buildBalancePool：**固定余额**配额。上游只给"账上还剩多少钱"，没有周期/总量，
 // 所以不画百分比、不算倒计时——直接报金额（百分比对余额没有意义）。
-func buildBalancePool(provider, name string, amount float64, unit string) Pool {
+func buildBalancePool(provider, name, text string, amount float64, hasAmount bool, unit string) Pool {
 	st := poolOK
-	if amount <= 0 {
+	if hasAmount && amount <= 0 {
 		st = poolCrit
 	}
 	return Pool{Provider: provider, Name: name, Kind: "balance", Mode: "balance",
-		Window: "", State: st, Amount: amount, Unit: unit, HasAmount: true}
+		Window: "", State: st, Amount: amount, Unit: unit, HasAmount: hasAmount,
+		BalanceText: text}
 }
 
 // sortPools：剩余升序（最紧的在最前）；无数据沉底；同档按名称稳定排序。

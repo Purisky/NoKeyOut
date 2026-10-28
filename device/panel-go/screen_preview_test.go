@@ -51,6 +51,12 @@ func TestQuotaChoices(t *testing.T) {
 	if got := quotaChoices(map[string]any{}); len(got) != 0 {
 		t.Errorf("空快照应为空表，got %v", got)
 	}
+	// 失败行没有 window：不能误标成 balance，要让人看出是取数失败
+	errSnap := map[string]any{"pools": []any{map[string]any{
+		"provider": "x", "name": "X", "kind": "plan", "mode": "period", "window": "", "err": "boom"}}}
+	if got := quotaChoices(errSnap); len(got) != 1 || !strings.HasSuffix(got[0]["label"].(string), " · error") {
+		t.Errorf("错误行标签应以 · error 结尾：%v", got)
+	}
 }
 
 // 固定余额配额：只报金额（不画条、不算倒计时），与周期配额共用同一行几何。
@@ -286,5 +292,18 @@ func TestMultiAccountPoolsAreDistinct(t *testing.T) {
 	// 但缺少供应商仍然拒
 	if err := validateLayout(layoutDoc{Modules: []string{"quota"}, Quotas: []quotaPick{{Window: "x"}}}); err == nil {
 		t.Fatal("缺供应商应被拒")
+	}
+}
+
+// OpenDesign 走插件后 provider id 变成 opendesign；小屏必须有真图标，不能退回灰色字母。
+func TestOpenDesignBrandIcon(t *testing.T) {
+	mk := providerBrand("opendesign", "Open Design")
+	if mk.logo != "opendesign" {
+		t.Fatalf("opendesign logo key = %q, want opendesign", mk.logo)
+	}
+	for _, size := range []int{18, 32} {
+		if _, ok := logoMask(mk, size); !ok {
+			t.Fatalf("缺 %dpx opendesign 图标掩码", size)
+		}
 	}
 }

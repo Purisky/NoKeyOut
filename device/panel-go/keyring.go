@@ -439,6 +439,7 @@ func (p *panel) firstboot(w http.ResponseWriter, r *http.Request, step string) {
 			p.errJSON(w, r, 502, firstNonEmpty(errs, out, fmt.Sprintf("provider add 失败 rc=%d", rc)))
 			return
 		}
+		p.stats.refreshQuotasSoon() // 新供应商的配额别等 30s 定时拍子
 		p.json(w, r, 200, map[string]any{"ok": true, "out": out}, nil)
 	case "done":
 		if err := os.MkdirAll(filepath.Dir(p.cfg.firstbootFlag), 0o755); err == nil {

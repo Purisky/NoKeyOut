@@ -18,7 +18,7 @@ PORT="8443"
 DRY=0
 SKIP_MAGPIE=0
 OFFLINE=""
-MAGPIE_VERSION="${NOKEYOUT_MAGPIE_VERSION:-0.1.1322}"
+MAGPIE_VERSION="${NOKEYOUT_MAGPIE_VERSION:-0.1.1892}"
 SCREEN_MSG="${NOKEYOUT_SCREEN_MSG:-}"
 LANG_CODE="$(cat /var/lib/nokeyout/lang 2>/dev/null | head -1 || true)"
 [ "$LANG_CODE" = "zh" ] || LANG_CODE="en"
@@ -107,7 +107,7 @@ if [ -n "$OFFLINE" ] || [ -z "$URL" ]; then
     || die "manifest signature verification failed"
   VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/manifest.json" | head -1)"
   MAGPIE_VERSION="$(sed -n 's/.*"magpie"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/manifest.json" | head -1)"
-  [ -n "$MAGPIE_VERSION" ] || MAGPIE_VERSION="0.1.1322"
+  [ -n "$MAGPIE_VERSION" ] || MAGPIE_VERSION="0.1.1892"
   ASSET_JSON="$(tr -d '\n' < "$TMP/manifest.json" | sed -n "s/.*\"$ASSET\"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p")"
   [ -n "$OFFLINE" ] || URL="$(printf '%s' "$ASSET_JSON" | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   SHA="$(printf '%s' "$ASSET_JSON" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"

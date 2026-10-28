@@ -275,6 +275,11 @@ func shortErr(t *Txt, msg string) string {
 // 币种：字体有符号（只带 `$`）就用符号，否则用**单位代码**（`CNY 8.62`）——
 // 单位代码一定画得出来，也不会被误读成同币种。
 func moneyValue(m map[string]any) string {
+	// 上游余额原文优先：它自带符号或多币种单位（"$12.34"、"6,291 points left"），
+	// 二次拼装只会丢信息或把单位顺序弄错。
+	if s := strings.TrimSpace(snapS(m, "balance_text")); s != "" {
+		return s
+	}
 	a, ok := snapF(m, "amount")
 	if !ok {
 		return "-"

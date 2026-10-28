@@ -57,7 +57,7 @@ if [ ! -f device/tools/magpie-pull/magpie-pull ]; then
 fi
 cp device/tools/magpie-pull/magpie-pull "$D/tools/magpie-pull/" || exit 1
 # 离线首装需要 arm64 magpie 直接随包；用主机架构的 puller 拉取目标架构镜像。
-MAGPIE_VER="${NOKEYOUT_MAGPIE_VERSION:-0.1.1322}"
+MAGPIE_VER="${NOKEYOUT_MAGPIE_VERSION:-0.1.1892}"
 HOST_PULLER="$STAGE/magpie-pull-host"
 if [ -n "${NOKEYOUT_MAGPIE_BIN:-}" ] && [ -f "$NOKEYOUT_MAGPIE_BIN" ]; then
   cp "$NOKEYOUT_MAGPIE_BIN" "$D/gateway/bin/magpie"

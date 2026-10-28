@@ -13,8 +13,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,8 +100,10 @@ func (p *panel) consoleProxy(w http.ResponseWriter, r *http.Request, upPath stri
 		p.send(w, r, 502, []byte("upstream web unreachable (magpie-web key?)"), "text/plain; charset=utf-8", nil)
 		return
 	}
+	mutating := r.Method == http.MethodPost || r.Method == http.MethodPut ||
+		r.Method == http.MethodPatch || r.Method == http.MethodDelete
 	var body []byte
-	if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+	if mutating {
 		body = p.body(r)
 	}
 	out, err := http.NewRequestWithContext(r.Context(), r.Method, strings.TrimRight(p.cfg.upstreamWeb, "/")+upPath, nil)
@@ -128,6 +132,12 @@ func (p *panel) consoleProxy(w http.ResponseWriter, r *http.Request, upPath stri
 		return
 	}
 	defer resp.Body.Close()
+	// 供应商页的增删改（/api/provider*）落盘后，立刻重读配额；
+	// 否则屏上要等下一个 30s 定时拍子，新增的配额看起来"不同步"。
+	if mutating && resp.StatusCode >= 200 && resp.StatusCode < 300 &&
+		strings.HasPrefix(upPath, "/api/provider") && p.stats != nil {
+		p.stats.refreshQuotasSoon()
+	}
 	if retry && (resp.StatusCode == 303 || resp.StatusCode == 401) && r.Method == http.MethodGet {
 		ck2 := p.cookies.get(true)
 		if len(ck2) > 0 && strings.Join(ck2, ";") != strings.Join(ck, ";") {
@@ -171,17 +181,18 @@ func (p *panel) consoleProxy(w http.ResponseWriter, r *http.Request, upPath stri
 // stats：轮询网关 usage/quotas，算增量。契约：GET /api/stats、/api/quotas、
 // /v1/stats/snapshot（screend 用 X-Screen-Token）。
 type stats struct {
-	cfg      *cfg
-	interval time.Duration
-	mu       sync.Mutex
-	cur      map[string]any // 今日累计（兼容旧字段）
-	usage    map[string]any // 三周期用量视图：{"today":…,"7d":…,"30d":…}
-	pools    []any
-	hist     *usageHist // 面板自建 5 分钟桶 → 1px 一桶（不足则回退 API 粗桶）
-	ts       time.Time
-	err      string
-	stop     chan struct{}
-	once     sync.Once
+	cfg       *cfg
+	interval  time.Duration
+	mu        sync.Mutex
+	cur       map[string]any // 今日累计（兼容旧字段）
+	usage     map[string]any // 三周期用量视图：{"today":…,"7d":…,"30d":…}
+	pools     []any
+	hist      *usageHist // 面板自建 5 分钟桶 → 1px 一桶（不足则回退 API 粗桶）
+	ts        time.Time
+	err       string
+	stop      chan struct{}
+	once      sync.Once
+	quotaBusy atomic.Bool // 定时轮询与"供应商变更后立即刷新"不重叠
 
 	// 最近服务过的供应商与活动截止时间。
 	lastProvider string
@@ -374,46 +385,113 @@ func useView(u map[string]any) map[string]any {
 	}
 }
 
+// quotaResponse：/v1/magpie/quotas 的形状。
+//
+// balance 是**给人看的字符串**（"$12.34" / "¥88.88" / "6,291 points left"），
+// 不是数字。以前这里写成 *float64，只要 magpie 里出现一条余额卡，整个响应
+// 就 Unmarshal 失败，屏上所有配额冻结在旧值——新增供应商后尤其明显。
+type quotaResponse struct {
+	Data []quotaEntry `json:"data"`
+}
+
+type quotaEntry struct {
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Windows  []struct {
+		Name      string   `json:"name"`
+		Used      *float64 `json:"used"`      // 已用 %（指针：区分「缺字段」与「值为 0」）
+		Remaining *float64 `json:"remaining"` // 剩余 %
+		ResetsAt  string   `json:"resetsAt"`  // RFC3339；只有部分窗口有
+	} `json:"windows"`
+	// 上游错误：magpie 取数失败时会带这个（如 "401 Unauthorized: key expired"），
+	// 并把 windows 置空。屏上要**留行报错**，不能整条消失。
+	Error string `json:"error"`
+	// 账号：同一供应商下可能有多个账号（窗口名往往一模一样）。
+	// 上游现行字段是 user（登录邮箱）；alias 是用户自己起的名字，优先显示它。
+	// account/accountId/accountNames 是旧版/别的端点的写法，保留兼容。
+	Account      string   `json:"account"`
+	AccountID    string   `json:"accountId"`
+	AccountNames []string `json:"accountNames"`
+	User         string   `json:"user"`
+	Alias        string   `json:"alias"`
+	Last         bool     `json:"last"` // magpie 标"最近服务过的那一个"
+	// LastServedAt：magpie 记录的最近一次调用时间（RFC3339）。
+	// 用于"供应商正在被调用"的图标动画归因。
+	LastServedAt string `json:"lastServedAt"`
+	// 固定余额（key 型供应商）。上游给 display 文本；旧版也可能给裸数字。
+	Balance  quotaBalance `json:"balance"`
+	Currency string       `json:"currency"`
+}
+
+// quotaBalance 兼容两种上游写法，且**绝不因为一个字段让整份配额失败**：
+// 字符串（现行）保留原文给屏上显示，数字（旧版/测试）格式化成原文。
+type quotaBalance struct {
+	Text      string
+	Amount    float64
+	HasAmount bool
+}
+
+func (b *quotaBalance) UnmarshalJSON(data []byte) error {
+	*b = quotaBalance{}
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return nil // 类型再变也不拖垮整份配额
+		}
+		s = strings.TrimSpace(s)
+		b.Text = s
+		b.Amount, b.HasAmount = parseMoney(s)
+		return nil
+	}
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		b.Text = strconv.FormatFloat(n, 'f', -1, 64)
+		b.Amount, b.HasAmount = n, true
+	}
+	return nil
+}
+
+// parseMoney：从 "¥88.88" / "$12.34" / "6,291 points left" 里取出金额。
+func parseMoney(s string) (float64, bool) {
+	s = strings.ReplaceAll(s, ",", "")
+	start, end := -1, -1
+	for i, r := range s {
+		if r >= '0' && r <= '9' || r == '.' || r == '-' || r == '+' {
+			if start < 0 {
+				start = i
+			}
+			end = i + 1
+		} else if start >= 0 {
+			break
+		}
+	}
+	if start < 0 {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(s[start:end], 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 func (s *stats) pollQuotas() {
-	st, _, body := s.httpGetHelper(s.cfg.gatewayBase+"/v1/magpie/quotas", 8*time.Second)
+	if !s.quotaBusy.CompareAndSwap(false, true) {
+		return // 上一次还没答完（上游可能正卡在 12s 上限）
+	}
+	defer s.quotaBusy.Store(false)
+	// 上游 /v1/magpie/quotas 自己最多等 12s 才答（新供应商/慢供应商都落在这一档）；
+	// 面板等得更短就会在上游正要回包时放弃，屏上配额停在旧值。
+	st, _, body := s.httpGetHelper(s.cfg.gatewayBase+"/v1/magpie/quotas", 15*time.Second)
 	if st != 200 {
 		s.setErr(fmt.Sprintf("quotas HTTP %d", st))
 		return
 	}
-	var q struct {
-		Data []struct {
-			Provider string `json:"provider"`
-			Name     string `json:"name"`
-			Kind     string `json:"kind"`
-			Windows  []struct {
-				Name      string   `json:"name"`
-				Used      *float64 `json:"used"`      // 已用 %（指针：区分「缺字段」与「值为 0」）
-				Remaining *float64 `json:"remaining"` // 剩余 %
-				ResetsAt  string   `json:"resetsAt"`  // RFC3339；只有部分窗口有
-			} `json:"windows"`
-			// 上游错误：magpie 取数失败时会带这个（如 "401 Unauthorized: key expired"），
-			// 并把 windows 置空。屏上要**留行报错**，不能整条消失。
-			Error string `json:"error"`
-			// 账号：同一供应商下可能有多个账号（窗口名往往一模一样）
-			Account      string   `json:"account"`
-			AccountID    string   `json:"accountId"`
-			AccountNames []string `json:"accountNames"`
-			Last         bool     `json:"last"` // magpie 标"最近服务过的那一个"
-			// LastServedAt：magpie 记录的最近一次调用时间（RFC3339）。
-			// 用于"供应商正在被调用"的图标动画归因。
-			LastServedAt string `json:"lastServedAt"`
-			// 固定余额（key 型供应商）：magpie 给 balance，或 balances[]（可能多币种）
-			Balance  *float64 `json:"balance"`
-			Currency string   `json:"currency"`
-			Balances []struct {
-				Currency  string   `json:"currency"`
-				Total     *float64 `json:"total"`
-				Remaining *float64 `json:"remaining"`
-				Amount    *float64 `json:"amount"`
-				Balance   *float64 `json:"balance"`
-			} `json:"balances"`
-		} `json:"data"`
-	}
+	var q quotaResponse
 	if json.Unmarshal(body, &q) != nil {
 		return
 	}
@@ -437,8 +515,10 @@ func (s *stats) pollQuotas() {
 			name = "?"
 		}
 		acct := strings.TrimSpace(p.Account)
-		if acct == "" {
-			acct = strings.TrimSpace(p.AccountID)
+		for _, cand := range []string{p.AccountID, p.Alias, p.User} {
+			if acct == "" {
+				acct = strings.TrimSpace(cand)
+			}
 		}
 		if acct == "" && len(p.AccountNames) == 1 {
 			acct = strings.TrimSpace(p.AccountNames[0])
@@ -464,31 +544,18 @@ func (s *stats) pollQuotas() {
 			pools = append(pools, pl)
 		}
 		// 取不到窗口（上游报错/尚未就绪）：仍然出一条**错误行**，保证供应商不消失。
-		if len(p.Windows) == 0 {
+		// 余额卡本来就没有窗口——它下面单独成行，别再多画一条空错误行。
+		if errMsg := strings.TrimSpace(p.Error); len(p.Windows) == 0 && (errMsg != "" || p.Balance.Text == "") {
 			pl := buildPool(p.Provider, name, p.Kind, "", 0, 0, false)
 			pl.Account = acct
-			pl.Err = strings.TrimSpace(p.Error)
+			pl.Err = errMsg
 			pools = append(pools, pl)
 		}
 		// 固定余额：没有周期、没有重置，单独成一条行（window=""）。
-		if p.Balance != nil {
-			bp := buildBalancePool(p.Provider, name, *p.Balance, p.Currency)
-			bp.Account = acct
-			pools = append(pools, bp)
-		} else if len(p.Balances) > 0 {
-			b := p.Balances[0]
-			amt := 0.0
-			for _, cand := range []*float64{b.Remaining, b.Amount, b.Balance, b.Total} {
-				if cand != nil {
-					amt = *cand
-					break
-				}
-			}
-			cur := b.Currency
-			if cur == "" {
-				cur = p.Currency
-			}
-			bp := buildBalancePool(p.Provider, name, amt, cur)
+		// 原文（"$12.34"/"6,291 points left"）直接给屏上，别二次格式化丢单位。
+		if p.Balance.Text != "" {
+			bp := buildBalancePool(p.Provider, name, p.Balance.Text,
+				p.Balance.Amount, p.Balance.HasAmount, p.Currency)
 			bp.Account = acct
 			pools = append(pools, bp)
 		}
@@ -500,6 +567,15 @@ func (s *stats) pollQuotas() {
 		s.lastProvider = newestProvider
 	}
 	s.mu.Unlock()
+}
+
+// refreshQuotasSoon：供应商刚被增删改后，别等 30s 的定时拍子。
+// 延迟半秒让 magpie 落盘/重建目录；真正的读取仍由 pollQuotas 统一节流。
+func (s *stats) refreshQuotasSoon() {
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		s.pollQuotas()
+	}()
 }
 
 // poolsToAny：快照契约 []any（map 形式）。字段名与渲染层/用户 JSON 页约定一致。
@@ -529,6 +605,9 @@ func poolsToAny(ps []Pool) []any {
 		if p.HasAmount {
 			m["amount"] = p.Amount
 			m["unit"] = p.Unit
+		}
+		if p.BalanceText != "" {
+			m["balance_text"] = p.BalanceText
 		}
 		out = append(out, m)
 	}

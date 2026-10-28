@@ -19,8 +19,9 @@ import (
 )
 
 // screenModules：模块布局的 HTTP 接口（需会话；LOCKED 时监听已被门控关掉，天然不可达）。
-//   GET  → {"modules":[…],"max":3,"budget":240,"available":[{id,label,height}…]}
-//   POST {"modules":[…]} → 校验并原子落盘；渲染线程按 mtime 热加载
+//
+//	GET  → {"modules":[…],"max":3,"budget":240,"available":[{id,label,height}…]}
+//	POST {"modules":[…]} → 校验并原子落盘；渲染线程按 mtime 热加载
 func (p *panel) screenModules(w http.ResponseWriter, r *http.Request) {
 	if p.user(r) == "" {
 		p.errJSON(w, r, 401, "no session")
@@ -35,7 +36,7 @@ func (p *panel) screenModules(w http.ResponseWriter, r *http.Request) {
 		p.json(w, r, 200, map[string]any{
 			"modules": doc.Modules, "budget": screenH,
 			"available": moduleInfoList(),
-			"quotas": doc.Quotas, "usage": doc.Usage, "compact": doc.Compact,
+			"quotas":    doc.Quotas, "usage": doc.Usage, "compact": doc.Compact,
 			"usage_periods": usagePeriods,
 			// 可选配额行（供应商/周期/形态），来自实时快照：编辑器据此生成下拉，
 			// 前端不写死任何供应商或窗口名。
@@ -79,13 +80,19 @@ func quotaChoices(snap map[string]any) []map[string]any {
 		}
 		if w := snapS(m, "window"); w != "" {
 			label += " · " + w
-		} else {
-			label += " · " + snapS(m, "unit") // 余额行：用币种当后缀
+		} else if kind == "balance" {
+			if u := snapS(m, "unit"); u != "" {
+				label += " · " + u // 余额行：用币种当后缀（原文金额会变，不进标签）
+			} else {
+				label += " · balance"
+			}
+		} else if snapS(m, "err") != "" {
+			label += " · error" // 取不到窗口的供应商也留在下拉里，标出原因
 		}
 		out = append(out, map[string]any{
 			"provider": snapS(m, "provider"), "window": snapS(m, "window"),
 			"account": snapS(m, "account"), "name": snapS(m, "name"),
-			"mode": kind, "label": label,
+			"mode": kind, "label": label, "error": snapS(m, "err") != "",
 		})
 	}
 	return out
@@ -144,10 +151,10 @@ func canvasPNG(c *Canvas, scale int) []byte {
 	return buf.Bytes()
 }
 
-
 // screenCfgHandler：物理屏尺寸与方向（GET 读 / POST 写）。
-//   GET  → {panelW,panelH,rotation,logicalW,logicalH,backend,madctl,presets}
-//   POST {"panelW":240,"panelH":320,"rotation":0} → 校验、落盘、实时重建渲染线程
+//
+//	GET  → {panelW,panelH,rotation,logicalW,logicalH,backend,madctl,presets}
+//	POST {"panelW":240,"panelH":320,"rotation":0} → 校验、落盘、实时重建渲染线程
 func (p *panel) screenCfgHandler(w http.ResponseWriter, r *http.Request) {
 	if p.user(r) == "" {
 		p.errJSON(w, r, 401, "no session")

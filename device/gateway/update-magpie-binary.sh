@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-#   sudo ./update-magpie-binary.sh 0.1.1322 [--arch aarch64]
+#   sudo ./update-magpie-binary.sh 0.1.1892 [--arch aarch64]
 set -euo pipefail
 NEWVER="${1:-}"; shift || true
 ARCH="${ARCH:-$(uname -m)}"
 say() { printf '\n== %s ==\n' "$*"; }
 die() { echo "update-magpie-binary: $*" >&2; exit 1; }
+# 设备镜像不一定有 file(1)（Armbian/Buildroot 都可能没有）；用 od 读魔数。
+is_elf() { [ "$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "7f454c46" ]; }
 [ "$(id -u)" = 0 ] || die "root required"
 [ -n "$NEWVER" ] || die "用法: update-magpie-binary.sh <x.y.z>"
 [[ "$NEWVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式 x.y.z"
@@ -55,7 +57,7 @@ else
   [ -f "/tmp/magpie-$NEWVER" ] || { docker rm -f "$CID" >/dev/null 2>&1; die "镜像里找不到 magpie 二进制"; }
   docker rm -f "$CID" >/dev/null 2>&1
 fi
-file "/tmp/magpie-$NEWVER" | grep -q ELF || die "不是 ELF"
+is_elf "/tmp/magpie-$NEWVER" || die "不是 ELF"
 chmod 0755 "/tmp/magpie-$NEWVER"
 install -m 0755 "/tmp/magpie-$NEWVER" "$NEWBIN"
 rm -f "/tmp/magpie-$NEWVER"

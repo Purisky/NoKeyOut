@@ -11,13 +11,14 @@ set -euo pipefail
 APP=/var/lib/nokeyout/app
 ETC=/etc/nokeyout
 HERE="$(cd "$(dirname "$0")" && pwd)"
-IP="${NOKEYOUT_DEVICE_IP:-192.0.2.10}"; PORT="8443"; CTR="magpie"; DRY=0; CERT_REISSUE=""
+IP="${NOKEYOUT_DEVICE_IP:-192.0.2.10}"; PORT="8443"; CTR="magpie"; DRY=0; CERT_REISSUE=""; RESET_ENV=0
 DNS_ARGS=()
 while [ $# -gt 0 ]; do case "$1" in
   --ip) IP="$2"; shift 2;; --port) PORT="$2"; shift 2;;
   --container) CTR="$2"; shift 2;; --dry-run) DRY=1; shift;;
   --dns) DNS_ARGS+=(--dns "$2"); shift 2;;
   --cert-reissue) CERT_REISSUE="--reissue"; shift;;
+  --reset-env) RESET_ENV=1; shift;;
   *) echo "未知参数 $1"; exit 1;; esac; done
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -203,6 +204,10 @@ run "touch $ETC/panel.env; chown root:nokeyout $ETC/panel.env; chmod 640 $ETC/pa
 
 say "6/7 配置与 systemd"
 # 登录认证走 C 版 PAM helper（sudo -n nokeyout-auth），**不依赖 python3/pam 模块**。
+# panel.env 是用户配置（屏幕后端/引脚等），自升级必须保留；--reset-env 显式重置。
+if [ -s "$ETC/panel.env" ] && [ "$RESET_ENV" != 1 ]; then
+  echo "  panel.env 已存在，保留（--reset-env 可恢复默认模板）"
+else
 run "cat > $ETC/panel.env" <<EOF
 # nokeyout-panel 配置（setup.sh 生成；改完 systemctl restart nokeyout-panel）
 PANEL_PORT=$PORT
@@ -245,6 +250,7 @@ USER_BUTTON_POLL_MS=30
 USER_BUTTON_DEBOUNCE_MS=60
 USER_BUTTON_FILE=/var/lib/nokeyout/state/user-button.json
 EOF
+fi
 DOCKER_AFTER=""; DOCKER_WANTS=""
 if command -v docker >/dev/null 2>&1; then
   DOCKER_AFTER=" docker.service"; DOCKER_WANTS="Wants=docker.service"

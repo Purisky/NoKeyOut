@@ -17,6 +17,8 @@ UNIT=/etc/systemd/system/nokeyout-magpie-binary.service
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 say() { printf '\n== %s ==\n' "$*"; }
 die() { echo "install-binary: $*" >&2; exit 1; }
+# 设备镜像不一定有 file(1)；用 od 读 ELF 魔数。
+is_elf() { [ "$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "7f454c46" ]; }
 [ "$(id -u)" = 0 ] || die "root required"
 
 say "1/5 取二进制"
@@ -31,7 +33,7 @@ fi
 if [ ! -s /tmp/magpie-new ]; then
   # 容器不可用 → 从官方多架构镜像提取。release 资产只有 CLI、不是服务端二进制，
   say "1b/5 容器不可用，从官方镜像提取"
-  IVER="${MAGPIE_IMAGE_VERSION:-0.1.1322}"
+  IVER="${MAGPIE_IMAGE_VERSION:-0.1.1892}"
   IMG="ghcr.io/yetone/magpie:$IVER"
   systemctl is-active --quiet docker 2>/dev/null || systemctl start docker
   docker pull --quiet "$IMG" >/dev/null 2>&1 || \
@@ -47,7 +49,7 @@ if [ ! -s /tmp/magpie-new ]; then
   [ -s /tmp/magpie-new ] || die "镜像里找不到 magpie 二进制"
   VER="$IVER"
 fi
-file /tmp/magpie-new | grep -q ELF || die "不是 ELF 二进制"
+is_elf /tmp/magpie-new || die "不是 ELF 二进制"
 chmod 0755 /tmp/magpie-new
 [ "$DRY" = 1 ] && { echo "  dry-run 完成（未安装）"; exit 0; }
 

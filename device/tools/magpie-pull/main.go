@@ -3,7 +3,7 @@
 // 拉起整个守护进程（Buildroot/128MB 目标镜像不带 docker）；registry 协议本身
 // 只是三个 HTTP 调用 + 一层 gzip tar 解包，不值得为一个 5MB 文件引入 25MB 客户端。
 //
-//   magpie-pull ghcr.io/yetone/magpie:0.1.1322 -o /tmp/magpie
+//   magpie-pull ghcr.io/yetone/magpie:0.1.1892 -o /tmp/magpie
 //
 // 匿名拉取（公开镜像）：token endpoint 取匿名 token → manifest（按本机 arch 选
 // index 条目）→ blob（gzip tar）→ 提取 /magpie。输出前校验 ELF 魔数。
@@ -155,7 +155,7 @@ func newClient() *http.Client {
 }
 
 func splitRef(ref string) (reg, repo, tag string) {
-	// 支持 ghcr.io/yetone/magpie:0.1.1322 与 docker.io/library/x:tag
+	// 支持 ghcr.io/yetone/magpie:0.1.1892 与 docker.io/library/x:tag
 	i := strings.Index(ref, "/")
 	if i < 0 {
 		return "", "", ""

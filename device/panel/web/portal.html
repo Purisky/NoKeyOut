@@ -472,7 +472,7 @@ NK.I18N = {
   "暂无额度数据": "No quota data",
   "magpie 未配置供应商，或还没有可用额度":
     "No providers configured in magpie, or no quota available yet",
-  "固定余额": "fixed balance", "已用": "used", "剩余": "left",
+  "固定余额": "fixed balance", "余额": "balance", "已用": "used", "剩余": "left",
   "额度": "quota", "暂无数据": "no data", "即将重置": "resetting soon",
   "重置": "resets in", "后": "",
   "天": "d", "小时": "h", "分": "m",
@@ -573,16 +573,57 @@ NK.I18N = {
   "当前版本": "Current", "上游最新": "Upstream latest", "上次已知良好": "Last known good",
   "备份数": "backups", "未知": "unknown", "未记录": "not recorded",
 };
+Object.assign(NK.I18N, {
+  "NoKeyOut 官方签名更新": "NoKeyOut signed update",
+  "nokeyout-upgrade nk-deploy <本地 tarball>": "nokeyout-upgrade nk-deploy <local tarball>",
+  "omp plugin link \"<仓库路径>/NoKeyOut/omp-provider\" # 或分发形态：omp plugin install git:github.com/<you>/omp-nokeyout-provider": "omp plugin link \"<repo path>/NoKeyOut/omp-provider\" # or: omp plugin install git:github.com/<you>/omp-nokeyout-provider",
+  "px」是唯一约束": "px is the only constraint",
+  "— 可选通道；不影响自行构建/替换": "— optional channel; does not affect your own build or replacement",
+  "— 选择密钥与 agent": "— select a key and agent",
+  "保存并应用": "Save and apply",
+  "升级是显式动作：本页只提供能力，不会催促。出厂版本 = NoKeyOut 验证过的组合； 自行升级测试前请先备份，失败会自动回滚到升级前版本。": "Upgrades are explicit: this page only offers them. The factory version is the combination NoKeyOut verified; back up before testing your own upgrade — a failure rolls back automatically.",
+  "升级流程：拉镜像 → 重建网关 → 健康检查 → 一次真实调用冒烟；任一步失败自动回滚。 整个网关 LLM 服务会中断": "Upgrade: pull image → recreate gateway → health check → one real call. Any failure rolls back. The whole gateway LLM service is interrupted",
+  "回滚": "Roll back",
+  "安装最新": "Install latest",
+  "密钥": "Key",
+  "小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤": "Up to 3 modules, top to bottom; total height ≤",
+  "屏幕": "Screen",
+  "插件的 headers.User-Agent 与 promptCacheSessionHeader 已内建；模型列表 8 秒上限拉取， 失败不卡启动，会话内": "The plugin's headers.User-Agent and promptCacheSessionHeader are built in; the model list is fetched with an 8s cap, and a failure does not block startup or the session",
+  "方向": "Orientation",
+  "检查更新": "Check for updates",
+  "槽高合计 / 屏高": "Total height / screen height",
+  "添加配额": "Add quota",
+  "物理屏": "Physical screen",
+  "离线安装。设备没有安全启动/硬件锁定。": "offline install. The device has no secure boot or hardware lock.",
+  "签名只约束这个官方更新按钮；自行修改的 NoKeyOut 可直接替换二进制，或用": "The signature only covers this official update button; your own NoKeyOut build can replace the binary directly, or use",
+  "约 10–30 秒": "about 10–30 s",
+  "网关健康总览": "Gateway health overview",
+  "设备本地今日 00:00 起": "since 00:00 device local time",
+  "选密钥 → 选 agent → 生成配置": "Pick key → pick agent → generate config",
+  "配额自定义（空 = 自动：全部配额按剩余升序）": "Custom quotas (empty = auto: all quotas by remaining, ascending)",
+  "面板": "Panel",
+  "面板尺寸与显示方向。改完立即重建渲染线程（画布尺寸、MADCTL 与窗口偏移一起换）。": "Panel size and orientation. Saving rebuilds the renderer immediately (canvas size, MADCTL and window offsets together)."
+});
+Object.assign(NK.I18N, {"添加模块": "Add module", "顺序即屏上自上而下；槽高合计 ≤ 240px（剩余空间自动均摊，铺满整屏）": "Top to bottom; total height ≤ 240px (remaining space is distributed to fill the screen)", "空 = 自动：全部配额按剩余升序": "empty = auto: all quotas by remaining, ascending"});
 NK.t = s => (NK.lang === 'zh' ? s : (NK.I18N[s] ?? s));
 NK.apply = () => {
-  document.querySelectorAll('[placeholder]').forEach(el => el.placeholder = NK.t(el.placeholder));
+  document.querySelectorAll('[placeholder],[title],[aria-label]').forEach(el => {
+    for (const a of ['placeholder', 'title', 'aria-label']) {
+      const v = el.getAttribute(a);
+      if (!v) continue;
+      const t = v.trim(), tr = NK.I18N[t] ?? NK.I18N[t.replace(/\s+/g, ' ')];
+      if (tr) el.setAttribute(a, NK.lang === 'zh' ? t : tr);
+    }
+  });
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const edits = [];
   for (let n; (n = walk.nextNode());) {
     const s = n.textContent, t = s.trim();
-    if (t && NK.I18N[t]) edits.push([n, s, t]);
+    const key = t.replace(/\s+/g, ' ');
+    const tr = NK.I18N[t] ?? NK.I18N[key];
+    if (t && tr) edits.push([n, s, t, NK.lang === 'zh' ? t : tr]);
   }
-  for (const [n, s, t] of edits) n.textContent = s.replace(t, NK.t(t));
+  for (const [n, s, t, tr] of edits) n.textContent = s.replace(t, tr);
   const b = document.getElementById('nklang');
   if (b) b.textContent = NK.t('EN');
   document.documentElement.lang = NK.lang === 'zh' ? 'zh-CN' : 'en';
@@ -604,6 +645,19 @@ const langReady = (async () => {
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// 配额窗口/类型来自 magpie（英文），面板负责按当前语言显示；未知值原样保留。
+const quotaKindLabel = k => NK.lang === 'zh'
+  ? ({ subscription: '订阅', plan: '套餐', balance: '余额' }[k] || k) : k;
+const quotaWindowLabel = w => {
+  const x = String(w || '').trim();
+  const m = x.match(/^(\d+)\s*(hour|hours|day|days|week|weeks|month|months)$/i);
+  if (m) {
+    const zh = { hour: '小时', hours: '小时', day: '天', days: '天', week: '周', weeks: '周', month: '个月', months: '个月' };
+    return NK.lang === 'zh' ? `${m[1]} ${zh[m[2].toLowerCase()]}` : x;
+  }
+  return NK.lang === 'zh'
+    ? ({ month: '月', week: '周', day: '天' }[x.toLowerCase()] || x) : x;
+};
 const gwRoot = () => (GWURL || ('http://' + location.hostname + ':3425'));   // 客户端-facing 网关根
 const gw = () => gwRoot() + '/v1';
 
@@ -878,8 +932,9 @@ function renderPools() {
     const rows = g.items.map(p => {
       if (p.err) return `<div class="dbpool-row"><div class="dbpool-err">${esc(p.err)}</div></div>`;
       if (p.mode === 'balance' || (p.amount != null && p.used_pct == null)) {
-        const amt = p.amount == null ? '—' :
-          (p.unit ? `${p.amount} ${p.unit}` : String(p.amount));
+        const amt = p.balance_text ? String(p.balance_text) :
+          (p.amount == null ? '—' :
+            (p.unit ? `${p.amount} ${p.unit}` : String(p.amount)));
         const tone = p.state === 2 ? 'bad' : p.state === 1 ? 'warn' : '';
         return `<div class="dbpool-row"><div class="dbpool-bal ${tone}">${esc(amt)}</div>` +
           `<div class="dbpool-note">${NK.t('固定余额')}</div></div>`;
@@ -899,11 +954,11 @@ function renderPools() {
         reset = left <= 0 ? NK.t('即将重置') : NK.t('重置') + ' ' + fmtDur(left / 1000) + NK.t('后');
       }
       return `<div class="dbpool-row">` +
-        `<div class="dbpool-lab"><span>${esc(p.window || NK.t('额度'))}</span><span>${esc(right)}</span></div>` +
+        `<div class="dbpool-lab"><span>${esc(quotaWindowLabel(p.window) || NK.t('额度'))}</span><span>${esc(right)}</span></div>` +
         meter + (reset ? `<div class="dbpool-note">${esc(reset)}</div>` : '') + `</div>`;
     }).join('');
     return `<div class="dbpool"><div class="dbpool-h"><b>${esc(g.name)}</b>` +
-      (g.kind ? `<span class="badge">${esc(g.kind)}</span>` : '') +
+      (g.kind ? `<span class="badge">${esc(quotaKindLabel(g.kind))}</span>` : '') +
       (g.account ? `<span class="dbpool-acct">${esc(g.account)}</span>` : '') +
       `</div>${rows}</div>`;
   }).join('');
@@ -1305,7 +1360,7 @@ const SCR = { budget: 0, avail: [], choices: [], periods: ['today'],
               mods: [], quotas: [], usage: 'today', compact: false, bad: true };
 // 模块对象（只剩内置模块）
 const scrMod = id => SCR.avail.find(m => m.id === id) || null;
-const scrLabel = id => { const m = scrMod(id); return (m && m.label && m.label.zh) || id; };
+const scrLabel = id => { const m = scrMod(id); return m && m.label ? (NK.lang === 'zh' ? m.label.zh : m.label.en) : id; };
 // 已选模块（顺序 = 屏上自上而下）
 const scrPicked = () => SCR.mods.filter(Boolean);
 // 槽高：后端 moduleInfoList 的 height 已含尾部间隔
@@ -1322,7 +1377,7 @@ function scrModsRender() {
   const box = $('#scrrows');
   if (!box) return;
   const opts = sel => [`<option value="">${esc(NK.t('空'))}</option>`].concat(
-    SCR.avail.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(NK.t(m.label.zh))}</option>`)
+    SCR.avail.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(NK.lang === 'zh' ? m.label.zh : m.label.en)}</option>`)
   ).join('');
   box.innerHTML = SCR.mods.map((id, i) => `<div class="scrrow" data-i="${i}">
       <span class="scridx muted">${i + 1}</span>
@@ -1335,7 +1390,7 @@ function scrModsRender() {
       <button class="act scrmdn"${i === SCR.mods.length - 1 ? ' disabled' : ''}>↓</button>
       <button class="act scrmdel">×</button>
     </div>`).join('') +
-    `<div class="row"><button class="act" id="scrmadd">添加模块</button>
+    `<div class="row"><button class="act" id="scrmadd">${NK.t('添加模块')}</button>
        <span class="muted">${esc(NK.t('顺序即屏上自上而下；槽高合计 ≤ 240px（剩余空间自动均摊，铺满整屏）'))}</span></div>`;
   box.querySelectorAll('.scrrow').forEach(row => {
     const i = +row.dataset.i;
@@ -1412,6 +1467,25 @@ $('#scrcfgsave').onclick = async () => {
   } catch (e) { $('#scrcfgmsg').textContent = NK.t('保存失败'); }
 };
 
+// 配额下拉的数据源是实时快照：在 magpie 里新增供应商/账号后，
+// 不刷新整页也要把它接进「添加配额」。只更新 choices，不动用户未保存的布局。
+const scrChoiceKey = list => (list || []).map(scrQKey).join('\u0002');
+async function scrChoicesRefresh() {
+  try {
+    const j = await (await fetch('/api/screen/modules')).json();
+    const next = j.quota_choices || [];
+    if (scrChoiceKey(next) === scrChoiceKey(SCR.choices)) return false;
+    SCR.choices = next;
+    scrQuotaList();
+    return true;
+  } catch (e) { return false; }
+}
+// 屏幕页签可见时每 10s 对齐一次；已打开的下拉在有新条目时会重建。
+setInterval(() => {
+  const pane = document.querySelector('.tabpane[data-pane="screen"]');
+  if (pane && pane.style.display !== 'none' && document.visibilityState === 'visible') scrChoicesRefresh();
+}, 10000);
+
 async function screenLoad() {
   const box = $('#scrrows');
   try {
@@ -1472,6 +1546,15 @@ function scrUsageRender() {
   if (!sel.value) { sel.value = 'today'; SCR.usage = 'today'; }
 }
 
+function scrChoiceLabel(c) {
+  let s = c.name || c.provider || '?';
+  if (c.account) s += ' · ' + c.account;
+  if (c.window) s += ' · ' + quotaWindowLabel(c.window);
+  else if (c.mode === 'balance') s += ' · ' + NK.t('余额');
+  else if (c.error) s += ' · ' + NK.t('错误');
+  return s;
+}
+
 function scrQuotaList() {
   const box = $('#scrqlist');
   if (!box) return;
@@ -1483,7 +1566,7 @@ function scrQuotaList() {
     const cur = scrQKey(q);
     const opts = SCR.choices.map(c => {
       const v = scrQKey(c);
-      return `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(c.label)}</option>`;
+      return `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(scrChoiceLabel(c))}</option>`;
     }).join('');
     const extra = SCR.choices.some(c => scrQKey(c) === cur) ? '' :
       `<option value="${esc(cur)}" selected>${esc((q.provider || '?') + ' / ' + (q.window || '—'))}${esc(NK.t('（当前不可用）'))}</option>`;
@@ -1526,7 +1609,8 @@ function scrQuotaMove(i, d) {
 // 添加配额：**永远追加一行**（条数不设限）。
 // 优先挑一个还没用过的条目；全都用过了就把最后一条复制一份——
 // 用户随后可以用下拉改成任意「供应商 · 账号 · 周期」，也可以故意重复。
-$('#scrqadd').onclick = () => {
+$('#scrqadd').onclick = async () => {
+  await scrChoicesRefresh(); // 刚在 magpie 里加的供应商，点这里就能选到
   const choices = SCR.choices || [];
   if (!choices.length) { $('#scrqmsg').textContent = NK.t('当前没有可用配额（等网关数据）'); return; }
   const used = new Set((SCR.quotas || []).map(scrQKey));
