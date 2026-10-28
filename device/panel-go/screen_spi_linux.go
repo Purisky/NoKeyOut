@@ -38,13 +38,16 @@ func openSPI(dev string, hz uint32) (*spiBus, error) {
 	return &spiBus{f: f}, nil
 }
 
+// spidev 默认 bufsiz=4096：单次 write 超过会 EMSGSIZE，按 4096 分块写。
+const spiChunk = 4096
+
 func (s *spiBus) write(b []byte) {
 	for len(b) > 0 {
-		n, err := s.f.Write(b)
-		if err != nil {
-			return
+		n := len(b)
+		if n > spiChunk {
+			n = spiChunk
 		}
-		if n == 0 {
+		if _, err := s.f.Write(b[:n]); err != nil {
 			return
 		}
 		b = b[n:]

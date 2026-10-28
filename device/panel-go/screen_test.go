@@ -205,20 +205,27 @@ func TestST7789Stream(t *testing.T) {
 	bus := &memSpi{}
 	st := newST7789(bus, memPin{}, nil, 0x70, 0, 0, true)
 	st.init()
-	cmds := [][]byte{}
+	type wireCmd struct {
+		c    byte
+		args []byte
+	}
+	var cmds []wireCmd
 	for _, r := range bus.rec {
 		if !r.dc {
-			cmds = append(cmds, r.buf)
+			cmds = append(cmds, wireCmd{c: r.buf[0]})
+			continue
 		}
+		last := &cmds[len(cmds)-1]
+		last.args = append(last.args, r.buf...)
 	}
-	if len(cmds) < 2 || cmds[0][0] != 0x11 || cmds[1][0] != 0x3A {
-		t.Fatalf("init 命令流不对: %x", cmds[:2])
+	if len(cmds) < 3 || cmds[0].c != 0x11 || cmds[1].c != 0x36 || len(cmds[1].args) != 1 || cmds[1].args[0] != 0x70 {
+		t.Fatalf("init 应先 SLPOUT 再 MADCTL 透传: %+v", cmds[:2])
 	}
-	if cmds[2][0] != 0x36 || cmds[2][1] != 0x70 {
-		t.Fatalf("MADCTL 透传失败: %x", cmds[2])
+	if cmds[2].c != 0x3A || len(cmds[2].args) != 1 || cmds[2].args[0] != 0x05 {
+		t.Fatalf("COLMOD 应为 0x05（卖家序列）: %+v", cmds[2])
 	}
-	if last := cmds[len(cmds)-1]; last[0] != 0x29 {
-		t.Fatalf("结尾应为 DISPON: %x", last)
+	if last := cmds[len(cmds)-1]; last.c != 0x29 {
+		t.Fatalf("结尾应为 DISPON: %+v", last)
 	}
 
 	// 渲染一页 → flush：CASET/RASET + RAMWR + 像素 == 画布差异区
@@ -231,20 +238,31 @@ func TestST7789Stream(t *testing.T) {
 	if !c.flush(st) {
 		t.Fatal("首帧应推送")
 	}
-	var cas, ram []byte
+	var cas, ras, ram []byte
 	var px [][]byte
+	cur := byte(0)
 	for _, r := range bus.rec {
-		switch {
-		case !r.dc && len(r.buf) > 0 && r.buf[0] == 0x2A:
-			cas = r.buf
-		case !r.dc && len(r.buf) > 0 && r.buf[0] == 0x2C:
+		if r.dc {
+			switch cur {
+			case 0x2A:
+				cas = append(cas, r.buf...)
+			case 0x2B:
+				ras = append(ras, r.buf...)
+			case 0x2C:
+				px = append(px, r.buf)
+			}
+			continue
+		}
+		cur = r.buf[0]
+		if cur == 0x2C {
 			ram = r.buf
-		case r.dc:
-			px = append(px, r.buf)
 		}
 	}
-	if !bytes.Equal(cas, []byte{0x2A, byte(box.x0 >> 8), byte(box.x0), byte(box.x1 >> 8), byte(box.x1)}) {
-		t.Fatalf("CASET=%x box=%v", cas, box)
+	if !bytes.Equal(cas, []byte{byte(box.x0 >> 8), byte(box.x0), byte(box.x1 >> 8), byte(box.x1)}) {
+		t.Fatalf("CASET 参数=%x box=%v", cas, box)
+	}
+	if !bytes.Equal(ras, []byte{byte(box.y0 >> 8), byte(box.y0), byte(box.y1 >> 8), byte(box.y1)}) {
+		t.Fatalf("RASET 参数=%x box=%v", ras, box)
 	}
 	if ram == nil || len(px) == 0 {
 		t.Fatal("缺 RAMWR/像素")

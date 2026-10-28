@@ -149,7 +149,7 @@ func loadCfg() *cfg {
 	c.screenHz = uint32(hz)
 	c.screenDC = cfgInt("SCREEN_DC", "128")
 	c.screenRST = cfgInt("SCREEN_RST", "140")
-	c.screenMADCTL = cfgIntHex(cfgGet("SCREEN_MADCTL", "0x70"))
+	c.screenMADCTL = cfgIntHex(cfgGet("SCREEN_MADCTL", "0x00"))
 	c.screenXOff = cfgInt("SCREEN_XOFF", "0")
 	c.screenYOff = cfgInt("SCREEN_YOFF", "0")
 	c.screenInvert = cfgGet("SCREEN_INVERT", "1") != "0"
