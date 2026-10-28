@@ -571,6 +571,7 @@ try {
   const doneOn = await cdp.eval(`document.getElementById('screen-done').disabled`);
   ok('S6e5 USR 再按亮屏、完成按钮恢复', onScreen.visible === true && doneOn === false, JSON.stringify({ onScreen, doneOn }));
   await cdp.pick('sw:toggle');
+  await cdp.waitFor(`window.NKView3D.screenDebug().source === 'admin'`, 4000);
   const scAdmin = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
   ok('S6e6 ON（闭合）=ADMIN 显示 IP 页',
     scAdmin.st.sw === true && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
@@ -578,9 +579,11 @@ try {
   const usrAdmin = await cdp.eval(`({ dbg: window.NKView3D.screenDebug(), toast: (() => { const el = document.getElementById('toast'); return { hidden: el.hidden, text: el.textContent }; })() })`);
   ok('S6e6b ADMIN 模式 USR 不熄屏并弹提示',
     usrAdmin.dbg.visible === true && usrAdmin.toast.hidden === false &&
-      usrAdmin.toast.text.includes('不能熄屏'), JSON.stringify(usrAdmin));
+      usrAdmin.toast.text.includes('不允许熄屏') &&
+      !!(usrAdmin.dbg.anim && usrAdmin.dbg.anim.toast), JSON.stringify(usrAdmin));
 
   await cdp.pick('sw:toggle');
+  await cdp.waitFor(`window.NKView3D.screenDebug().source === 'nokey'`, 4000);
   const scNoKey = await cdp.eval(`window.NKView3D.screenDebug()`);
   ok('S6e6d OFF（断路）=LOCK 显示常规页', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
 

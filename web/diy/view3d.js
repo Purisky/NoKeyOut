@@ -51,6 +51,7 @@
   let screenFrameCanvas = null, screenFrameCtx = null, screenFrameTex = null;
   let screenBaseCanvas = null, screenBaseCtx = null;
   let screenWasmCanvas = null, screenWasmReady = false, screenWasmLoading = false, screenWasmPage = '';
+  let screenLastAnim = null;
   let screenPageDirty = true;
   let photoRect = null, photoMat = null, meshVisible = true, ready = false;
   let renderDirty = true, rafOn = false, renderCount = 0, lastRenderMs = 0;
@@ -651,7 +652,7 @@
     (async () => {
       if (!window.NKScreen) {
         await load('../assets/screen/wasm_exec.js?v=8');
-        await load('../assets/screen/wasm.js?v=14');
+        await load('../assets/screen/wasm.js?v=15');
         await load('../assets/screen/demo-states.js?v=10');
       }
       await window.NKScreen.load();
@@ -672,7 +673,7 @@
     return screenAdminAt ? Math.max(0, (Date.now() - screenAdminAt) / 1000) : 0;
   }
 
-  function renderNativePage(page, en, force) {
+  function renderNativePage(page, en, force, opts) {
     if (!screenWasmReady || !nativeScreenPage(page)) return;
     const key = page + ':' + (en ? 'en' : 'zh');
     if (!force && screenWasmPage === key) return;
@@ -686,14 +687,18 @@
     if (page === 'admin') st.admin_s = adminSecondsNow();
     if (!st.url) st.url = 'https://<device-ip>:8443';
     if (Array.isArray(st.pools) && st.pools.length > 2) st.pools = st.pools.slice(0, 2);
-    window.NKScreen.render(screenWasmCanvas, st, { pulse: 0.5, ring: 0.62, slide: 1 }).then(() => {
+    const anim = { pulse: 0.5, ring: 0.62, slide: 1 };
+    if (opts && opts.transition) anim.transition = opts.transition;
+    if (opts && opts.toast) anim.toast = opts.toast;
+    screenLastAnim = anim;
+    window.NKScreen.render(screenWasmCanvas, st, anim).then(() => {
       screenPageDirty = true;
       if (!screenAnimRAF) applyScreenPage(true);
       requestRender();
     }).catch(() => {});
   }
 
-  /* ADMIN 页需要持续推进：秒表 + 超过 15 分钟的 1Hz 闪烁。 */
+  /* ADMIN 页持续推进：秒表 + 超时告警边框。 */
   function syncAdminScreen() {
     const want = screenBootOn && screenPageName === 'admin' && screenWasmReady;
     if (!want) {
@@ -706,9 +711,9 @@
         clearInterval(screenAdminTimer); screenAdminTimer = 0;
         return;
       }
-      if (document.hidden) return;
+      if (document.hidden || window.__nkScreenHold) return;
       renderNativePage('admin', screenLang() === 'en', true);
-    }, 250);
+    }, 33);
   }
 
   function drawPageToBase() {
@@ -909,7 +914,12 @@
 
   function setScreenBoot(on, opts) {
     on = !!on;
-    if (opts) screenBootOpts = Object.assign({}, screenBootOpts, opts);
+    const liveOpts = opts && (opts.transition || opts.toast) ? opts : null;
+    if (opts) {
+      screenBootOpts = Object.assign({}, screenBootOpts, opts);
+      delete screenBootOpts.transition;
+      delete screenBootOpts.toast;
+    }
     if (!screenDisplay) { screenBootOn = on; requestRender(); return false; }
     const changed = on !== screenBootOn;
     screenBootOn = on;
@@ -924,7 +934,7 @@
     const en = screenLang() === 'en';
     if (on) {
       ensureScreenWasm();
-      renderNativePage(screenPageName, en);
+      renderNativePage(screenPageName, en, !!liveOpts, liveOpts);
     }
     syncAdminScreen();
     if (changed) playScreenPower(on);
@@ -2404,7 +2414,7 @@
         cue: screenCueOn, cueGlow: +screenCueLevel.toFixed(2), cueParts: screenHlParts.length,
         locked: screenPageName === 'locked', source: screenPageName,
         lang: screenLang(),
-        wasm: screenWasmReady, native: screenWasmReady && nativeScreenPage(screenPageName), wasmPage: screenWasmPage,
+        wasm: screenWasmReady, native: screenWasmReady && nativeScreenPage(screenPageName), wasmPage: screenWasmPage, anim: screenLastAnim,
         map: screenFrameTex ? screenFrameTex.uuid : null,
         size: screenFrameCanvas ? [screenFrameCanvas.width, screenFrameCanvas.height] : null,
         face: screenDisplay ? screenDisplay.material.side : null,

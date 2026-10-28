@@ -18,6 +18,8 @@ import (
 
 var (
 	wasmCanvas = newCanvas(screenW, screenH)
+	wasmCur    = newCanvas(screenW, screenH)
+	wasmPrev   = newCanvas(screenW, screenH)
 	wasmHist   = newHistory()
 	wasmRGBA   = make([]byte, screenW*screenH*4)
 )
@@ -61,8 +63,35 @@ func wasmRender(this js.Value, args []js.Value) any {
 	if anim.slide <= 0 {
 		anim.slide = 1
 	}
+	transP := 0.0
+	fromUnlocked := false
+	if len(args) > 6 {
+		transP = args[6].Float()
+	}
+	if len(args) > 7 {
+		fromUnlocked = args[7].Int() != 0
+	}
+	toast := ""
+	if len(args) > 8 {
+		toast = args[8].String()
+	}
 	wasmHist.push(snap)
-	renderScreenPage(snap, wasmHist, wasmCanvas, lang, anim)
+	renderScreenPage(snap, wasmHist, wasmCur, lang, anim)
+	if transP > 0 && transP < 1 {
+		prev := cloneSnap(snap)
+		if fromUnlocked {
+			prev["switch"] = "unlocked"
+		} else {
+			prev["switch"] = "locked"
+		}
+		renderScreenPage(prev, wasmHist, wasmPrev, lang, anim)
+		compositeSharedAxis(wasmCanvas, wasmPrev, wasmCur, transP)
+	} else {
+		copy(wasmCanvas.Buf, wasmCur.Buf)
+	}
+	if toast != "" {
+		drawToast(wasmCanvas, toast)
+	}
 	for i := range screenW * screenH {
 		j := i * 2
 		r, g, b := rgb565expand(uint16(wasmCanvas.Buf[j])<<8 | uint16(wasmCanvas.Buf[j+1]))

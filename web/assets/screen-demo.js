@@ -23,6 +23,9 @@
   let raf = 0;
   let last = 0;
   let loading = false;
+  let toastUntil = 0;
+  const toastText = () => (zh ? 'ADMIN 模式不允许熄屏' : 'Screen stays on in ADMIN mode');
+  const activeToast = () => (Date.now() < toastUntil ? toastText() : '');
 
   /* 开关 OFF（断路）= LOCK = 正常运行 */
   const isLocked = () => !sw || !sw.checked;
@@ -46,18 +49,37 @@
     canvas.hidden = !ready;
     if (off) {
       off.textContent = powered ? label.off : label.on;
-      /* 端口开放时不允许熄屏：按钮禁用，拨回 LOCK 后恢复。 */
-      off.disabled = !isLocked();
-      off.title = isLocked() ? '' : (zh ? '端口开放时不能熄屏' : 'Screen stays on while ports are open');
+      off.disabled = false;
+      off.title = isLocked() ? '' : toastText();
     }
   }
 
-  function paint(anim) {
-    if (!window.NKScreenWasm) return;
-    window.NKScreen.render(canvas, snapshot(), anim || { pulse: 0.5, ring: 0.62, slide: 1 }).then(() => {
+  function frameAnim(extra) {
+    return Object.assign({ pulse: 0.5, ring: 0.62, slide: 1 }, extra || {}, { toast: activeToast() });
+  }
+
+  function paint(extra) {
+    if (!window.NKScreenWasm) return Promise.resolve();
+    return window.NKScreen.render(canvas, snapshot(), frameAnim(extra)).then(() => {
       ready = true;
       sync();
     }).catch(() => {});
+  }
+
+  async function playTransition(fromUnlocked) {
+    if (!window.NKScreenWasm) return;
+    animating = true;
+    const t0 = performance.now();
+    await new Promise((res) => {
+      const step = (t) => {
+        const p = Math.min(1, (t - t0) / 300);
+        window.NKScreen.render(canvas, snapshot(),
+          frameAnim({ transition: { p, fromUnlocked } })).then(() => { ready = true; sync(); }).catch(() => {});
+        if (p < 1) requestAnimationFrame(step); else res();
+      };
+      requestAnimationFrame(step);
+    });
+    animating = false;
   }
 
   function draw(t) {
@@ -67,7 +89,7 @@
     if (t - last >= every) {
       last = t;
       const pulse = (Math.sin(t / 430) + 1) / 2;
-      window.NKScreen.render(canvas, snapshot(), { pulse, ring: 0.62, slide: 1 }).then(() => {
+      window.NKScreen.render(canvas, snapshot(), frameAnim({ pulse })).then(() => {
         ready = true;
         sync();
       }).catch(() => {});
@@ -79,7 +101,7 @@
     if (loading) return;
     loading = true;
     window.NKScreen.load().then(async () => {
-      await window.NKScreen.render(canvas, snapshot(), { pulse: 0.5, ring: 0.62, slide: 1 });
+      await window.NKScreen.render(canvas, snapshot(), frameAnim());
       ready = true;
       loading = false;
       sync();
@@ -111,19 +133,25 @@
   provs.forEach((g) => g.setAttribute('aria-pressed', String(selected.has(g.dataset.prov))));
 
   if (sw) sw.addEventListener('change', () => {
-    if (isLocked()) {
+    const locked = isLocked();
+    if (locked) {
       adminAt = 0;
     } else {
       adminAt = Date.now();
-      powered = true; /* 端口开放期间屏幕必须常亮 */
+      powered = true;
     }
-    paint();
     sync();
+    playTransition(!locked);
   });
 
   if (off) {
     off.addEventListener('click', async () => {
-      if (!isLocked()) { sync(); return; } /* 端口开放时不允许熄屏 */
+      if (!isLocked()) {
+        toastUntil = Date.now() + 2500;
+        paint();
+        setTimeout(() => paint(), 2600);
+        return;
+      }
       powered = !powered;
       sync();
       if (!powered) {
@@ -133,7 +161,7 @@
         return;
       }
       if (!window.NKScreenWasm) { animating = false; return; }
-      await window.NKScreen.render(canvas, snapshot(), { pulse: 0.5, ring: 0.62, slide: 1 });
+      await window.NKScreen.render(canvas, snapshot(), frameAnim());
       ready = true;
       sync();
       animating = true;

@@ -53,7 +53,7 @@ const I18N = {
     'screen.guideOn': '屏幕已点亮；ON=ADMIN（显示产品标识、面板地址与开放计时，超时后边框告警），OFF=LOCK（常规面板）。端口开放时屏幕常亮，拨回 LOCK 后可用 USR 熄屏/亮屏。',
     'screen.first': '先把屏幕翻到正面。',
     'screen.done': '完成', 'screen.flipped': '[OK] 屏幕已翻到正面', 'screen.lit': '[OK] 接电完成，屏幕启动',
-    'screen.adminOn': '端口开放时不能熄屏：先拨回 LOCK。',
+    'screen.adminOn': 'ADMIN 模式不允许熄屏',
     'screen.adminKeep': '端口开放：屏幕保持常亮。',
     'anno.usr': 'USR · 熄屏 / 亮屏（仅 LOCK）', 'anno.switch': '开关 · ADMIN ↔ LOCK',
     'action.confirm': '确认', 'action.submit': '提交',
@@ -111,7 +111,7 @@ const I18N = {
     'screen.guideOn': 'Screen is lit; ON=ADMIN (product mark, panel URL and open timer, with an alert border after 15 min), OFF=LOCK (normal panel). The screen stays on while ports are open; USR works after flipping back to LOCK.',
     'screen.first': 'Flip the screen to the front first.',
     'screen.done': 'Done', 'screen.flipped': '[OK] Screen flipped', 'screen.lit': '[OK] Powered on; screen booted',
-    'screen.adminOn': 'Ports are open: flip back to LOCK before turning the screen off.',
+    'screen.adminOn': 'Screen stays on in ADMIN mode',
     'screen.adminKeep': 'Ports open: the screen stays on.',
     'anno.usr': 'USR · screen off / on (LOCK only)', 'anno.switch': 'Switch · ADMIN ↔ LOCK',
     'action.confirm': 'Confirm', 'action.submit': 'Submit',
@@ -805,12 +805,42 @@ function screenPageFor() {
   return 'nokey';              // OFF（断路）= LOCK：常规面板
 }
 
+let screenTrans = null;      // { start, fromUnlocked }
+let screenToast = null;      // { text, until }
+let screenTransRAF = 0;
+
 function refreshScreen() {
   if (!window.NKBOARD3D || !sceneMounted) return;
-  NKBOARD3D.setScreenBoot(!!S.screenOn && !!S.screenLit && !!S.screenFlipped, {
-    page: screenPageFor(),
-    adminAt: ADMIN_AT
-  });
+  const opts = { page: screenPageFor(), adminAt: ADMIN_AT };
+  if (screenTrans) {
+    opts.transition = {
+      p: Math.min(1, (performance.now() - screenTrans.start) / 300),
+      fromUnlocked: screenTrans.fromUnlocked
+    };
+  }
+  if (screenToast && performance.now() < screenToast.until) opts.toast = screenToast.text;
+  window.__nkScreenHold = !!screenTrans || !!screenToast;
+  NKBOARD3D.setScreenBoot(!!S.screenOn && !!S.screenLit && !!S.screenFlipped, opts);
+}
+
+function playScreenTransition(fromUnlocked) {
+  if (screenTransRAF) clearInterval(screenTransRAF);
+  screenTrans = { start: performance.now(), fromUnlocked };
+  screenTransRAF = setInterval(() => {
+    refreshScreen();
+    if (performance.now() - screenTrans.start >= 300) {
+      clearInterval(screenTransRAF);
+      screenTransRAF = 0;
+      screenTrans = null;
+      refreshScreen();
+    }
+  }, 16);
+}
+
+function flashScreenToast(text) {
+  screenToast = { text, until: performance.now() + 2500 };
+  refreshScreen();
+  setTimeout(() => { screenToast = null; refreshScreen(); }, 2600);
 }
 
 function flipScreen() {
@@ -834,7 +864,7 @@ function flipScreen() {
 
 function toggleScreenPower() {
   if (!S || !S.screenFlipped || !S.screenOn) { toast(t('screen.first')); return; }
-  if (S.sw) { toast(t('screen.adminOn'), 'bad'); return; } /* 端口开放：屏幕必须常亮 */
+  if (S.sw) { flashScreenToast(t('screen.adminOn')); toast(t('screen.adminOn'), 'bad'); return; }
   sfx('click');
   S.screenLit = !S.screenLit;
   saveState();
@@ -845,7 +875,9 @@ function toggleScreenPower() {
 
 function toggleSwitch() {
   sfx('switch');
+  const fromUnlocked = S.sw;
   S.sw = !S.sw;
+  screenToast = null;
   if (S.sw) {           /* ON（闭合）= ADMIN */
     ADMIN_AT = Date.now();
     if (S.screenOn) S.screenLit = true; /* 端口开放：不允许熄屏（含原本熄灭的屏） */
@@ -854,7 +886,9 @@ function toggleSwitch() {
   }
   saveState();
   if (window.NKBOARD3D && sceneMounted) NKBOARD3D.setSwitchState(S.sw);
-  if (S.screenFlipped) refreshScreen();
+  if (S.screenFlipped) {
+    playScreenTransition(fromUnlocked);
+  }
   if (S.sw && S.screenOn) toast(t('screen.adminKeep'));
   else toast(fmt(t('switch.flip'), { s: S.sw ? 'ON' : 'OFF' }));
 }
@@ -1412,7 +1446,7 @@ async function ensure3D() {
       ];
       if (location.protocol === 'file:') scripts.push('assets/board/models/fbx-data.js?v=20261023-1');
       scripts.push('assets/screen/screen-data.js?v=20261022-4');
-      scripts.push('view3d.js?v=20261028-1');
+      scripts.push('view3d.js?v=20261028-2');
       scripts.push('board3d.js?v=20261023-34');
       for (let i = 0; i < scripts.length; i++) {
         await loadScript(scripts[i]);

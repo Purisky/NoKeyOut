@@ -15,10 +15,10 @@
       const go = new Go();
       let instance;
       try {
-        const r = await fetch(base + 'nkscreen.wasm?v=23');
+        const r = await fetch(base + 'nkscreen.wasm?v=24');
         instance = await WebAssembly.instantiateStreaming(r, go.importObject);
       } catch (e) {
-        const buf = await (await fetch(base + 'nkscreen.wasm?v=23')).arrayBuffer();
+        const buf = await (await fetch(base + 'nkscreen.wasm?v=24')).arrayBuffer();
         instance = await WebAssembly.instantiate(buf, go.importObject);
       }
       go.run(instance.instance); // 永不 resolve，不要 await
@@ -48,7 +48,11 @@
     const slide = a.slide == null ? 1 : Number(a.slide);
     // now：动画时钟（秒）。M3 不确定圆形指示器的 5s 周期以它为相位基准。
     const now = a.now == null ? performance.now() / 1000 : Number(a.now);
-    m.render(JSON.stringify(state), img.data, pulse, ring, slide, now);
+    const tr = a.transition;
+    const tp = tr ? Math.max(0, Math.min(1, Number(tr.p) || 0)) : 0;
+    const fromUnlocked = tr && tr.fromUnlocked ? 1 : 0;
+    const toast = a.toast == null ? '' : String(a.toast);
+    m.render(JSON.stringify(state), img.data, pulse, ring, slide, now, tp, fromUnlocked, toast);
     ctx.putImageData(img, 0, 0);
   }
 
