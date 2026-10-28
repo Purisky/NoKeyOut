@@ -4,11 +4,9 @@ package main
 
 // wasm_main.go —— 把硬件屏同一套 Go 渲染器编成 WebAssembly。
 //
-// 构建（标准 Go 1.21+，无需 TinyGo）：
+// 构建：
 //   GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o ../../web/assets/screen/nkscreen.wasm .
-//   cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" ../../web/assets/screen/   # 与 Go 版本严格配对
-// 说明：仓库原先用 TinyGo（产物约 1.2MB）；本机无法下载 TinyGo 时改用标准 Go
-// （产物约 3.8MB），渲染结果一致。更换工具链必须同时更换 wasm_exec.js。
+//   cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" ../../web/assets/screen/
 //
 // JS 侧只做三件事：准备 snapshot JSON、传入 RGBA 目标缓冲、把结果贴到 canvas。
 // 页面内容、字体、配额条、时间追赶标记、CRT/翻页/圆环等全部仍由原生代码生成。

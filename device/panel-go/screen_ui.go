@@ -378,10 +378,7 @@ func maxi(a, b int) int {
 
 // ---------------------------------------------------------------- 管理页 / 错误
 
-// screenPageAdmin：开关在 ADMIN 位（端口开放）时显示访问地址。
-// LOCK 是正常运行态，走常规模块，不出现本页。
-// 版面强调**产品自身**（图标 + 名称），而不是"ADMIN"字样；开放时长用
-// Material Design 3 的**确定型线性进度指示器**表示（0…15 分钟提醒阈值）。
+// screenPageAdmin：端口开放（ADMIN 位）时的访问页。
 func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	sec, ok := snapF(snap, "admin_s")
 	if !ok || sec < 0 {
@@ -394,13 +391,11 @@ func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	}
 
 	c.clear(screenBG)
-	c.rect(0, 0, screenW, screenH, screenBorder) // 单层描边，不做嵌套卡片
+	c.rect(0, 0, screenW, screenH, screenBorder)
 
-	// 产品图标：与字标共用同一条流光色带。
 	drawMaskFlow(c, (screenW-productMarkSize)/2, 18, productMark48, productMarkSize,
 		productMarkSize/8, productMarkSize, anim.now)
 
-	// 大字标：Silkscreen（与正文 JetBrains Mono 区分）；颜色是流动渐变 + 高光扫过。
 	word := "NOKEYOUT"
 	drawWordmarkFlow(c, screenW/2, 74, word, anim.now)
 
@@ -411,7 +406,6 @@ func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 	SM.drawCenter(c, screenW/2, 108, screenTrunc(url, screenW-32), screenFG)
 	SM.drawCenter(c, screenW/2, 122, "ssh :22", screenMuted)
 
-	// 倒计时：NUM 数字字体（24px），只显示时长，居中。
 	drawCountdown(c, screenW/2, 146, fmtAdminDur(sec), timeCol, 1)
 
 	hint := t.get("admin_hint")

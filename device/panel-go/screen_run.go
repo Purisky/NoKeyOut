@@ -105,7 +105,7 @@ func (p *panel) screenLoop(backend string) {
 	ring := -1.0             // 圆环扫掠当前值（-1=未初始化）
 	powerOn := dev != nil    // 首帧也走一次 CRT 开机动画（物理屏 RAM 不可信）
 	startedAt := time.Now()
-	// 顶层页面切换（LOCK ↔ ADMIN 打开）：Material fade through（300ms）。
+	// LOCK ↔ ADMIN 页面切换（300ms）。
 	prevUnlocked := false
 	transStart := time.Time{}
 	transPrevUnlocked := false
@@ -183,7 +183,7 @@ func (p *panel) screenLoop(backend string) {
 			if active, _ := chal.peek()["active"].(bool); active {
 				uiChallenge(scratch, chal.peek())
 			}
-			// 顶层页面切换：Material fade through（出场 90ms + 入场 210ms）。
+			// 旧页滑出、新页滑入。
 			unlocked := snapS(snap, "switch") == "unlocked"
 			if !screenInited {
 				prevUnlocked, screenInited = unlocked, true

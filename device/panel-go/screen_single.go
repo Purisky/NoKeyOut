@@ -311,8 +311,7 @@ func rowIcon(c *Canvas, m map[string]any, x, y, size int) {
 	SM.drawCenter(c, x+size/2, y+size/2-6, mk.mark, inkOnDark(mk.color))
 }
 
-// providerActive：该供应商是否"正在被调用"（magpie 的 lastServedAt 归因 +
-// 用量增长时点亮的 activeUntil）。动画本身用 M3 不确定圆形指示器（见 screen_motion.go）。
+// providerActive：该供应商当前是否处于活动窗口。
 func providerActive(snap map[string]any, provider string) bool {
 	if provider == "" || snapS(snap, "active_provider") != provider {
 		return false
@@ -321,7 +320,7 @@ func providerActive(snap map[string]any, provider string) bool {
 	return ok && nowFn().Unix() < int64(until)
 }
 
-// drawProviderSpinner：在图标外圈画 M3 不确定圆形指示器（官方参数）。
+// drawProviderSpinner：图标外圈的不确定指示器。
 func drawProviderSpinner(c *Canvas, cx, cy, r int, now float64) {
 	drawM3Indeterminate(c, cx, cy, r, 2, screenAccent, now)
 }

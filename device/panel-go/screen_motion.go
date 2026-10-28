@@ -1,20 +1,6 @@
 package main
 
-// screen_motion.go —— 有出处的动效参数（不自行发明）。
-//
-// 1) 不确定圆形进度指示器（供应商正在被调用时，围绕其图标）：
-//    Material Design 3 / AndroidX Compose Material3 的官方实现参数
-//    androidx.wear.compose.material3.CircularProgressIndicator.kt：
-//      · 全局旋转 1440° / 5000ms（Linear）
-//      · 附加旋转 0@1250ms、360@2500ms、360@3750ms、720@5000ms
-//      · 扫掠长度 0→0.8@1250ms→0.2@2500ms→0.8@3750ms→0@5000ms
-//      · 起始角 270°，段间缓动 = MotionTokens.EasingStandard (0.2, 0, 0, 1)
-//    来源：https://android.googlesource.com/platform/frameworks/support/+/HEAD/wear/compose/compose-material3/src/main/java/androidx/wear/compose/material3/CircularProgressIndicator.kt
-//
-// 2) 顶层页面切换（LOCK ↔ ADMIN 打开）：
-//    Material Design 的 fade through：总 300ms，出场 90ms，入场 210ms
-//    （outgoing 完全淡出后 incoming 再淡入）。
-//    来源：https://m2.material.io/design/motion/the-motion-system.html
+// screen_motion.go —— 动效参数与页面切换合成。
 
 import (
 	"math"
@@ -23,7 +9,7 @@ import (
 
 // ---- 缓动
 
-// easingStandard：Material MotionTokens.EasingStandard = cubic-bezier(0.2, 0, 0, 1)。
+// easingStandard：cubic-bezier(0.2, 0, 0, 1)。
 func easingStandard(x float64) float64 {
 	if x <= 0 {
 		return 0
@@ -69,7 +55,7 @@ func keyframesAt(sec float64, kf []keyframe) float64 {
 	return kf[len(kf)-1].v
 }
 
-// ---- M3 不确定圆形指示器
+// 不确定圆形指示器
 
 var (
 	m3RotationKF = []keyframe{{0, 0}, {1.25, 0}, {2.5, 360}, {3.75, 360}, {5, 720}}
@@ -88,7 +74,7 @@ func m3Indeterminate(now float64) (float64, float64) {
 	return 270 + global + add, clamp01(sweep)
 }
 
-// drawM3Indeterminate：围绕 (cx,cy)、半径 r 画一段官方参数驱动的圆弧。
+// drawM3Indeterminate：绕 (cx,cy)、半径 r 画不确定圆弧。
 // now<=0 时不画（静态场景不引入噪声，黄金样本可复现）。
 func drawM3Indeterminate(c *Canvas, cx, cy, r, thick int, color uint16, now float64) {
 	if now <= 0 || r <= 1 || thick <= 0 {
@@ -103,14 +89,10 @@ func drawM3Indeterminate(c *Canvas, cx, cy, r, thick int, color uint16, now floa
 	c.arc(cx, cy, r, a0, a1, color, thick)
 }
 
-// ---- Material shared axis（页面切换）
-
-// shared axis：两个页面共享同一空间关系，出场向左滑出并淡出、入场从右滑入并淡入，
-// 中间不出现整屏黑场，因此比 fade through 更连贯。
-// 来源：https://m2.material.io/design/motion/the-motion-system.html（shared axis，300ms）
+// 页面切换
 
 const (
-	pageTransDur = 300 * time.Millisecond // 官方 300ms
+	pageTransDur = 300 * time.Millisecond
 	pageSlidePx  = 24                     // 240px 屏上约 10% 宽的位移，避免过度运动
 )
 

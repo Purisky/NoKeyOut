@@ -1,12 +1,6 @@
 package main
 
-// screen_wordmark.go —— ADMIN 页的大字标与倒计时。
-//
-// 字标用 Silkscreen（仓库 web/assets/fonts，OFL）34px 光栅化的 1bpp 字模，
-// 与正文的 JetBrains Mono 区分开；倒计时用 NUM 数字字体（24px）。
-//
-// 字标/图标颜色由 Balatro paint-swirl 算法逐点取样（见 screen_flow.go）；
-// 静态（now<=0）退回纯色，保证黄金样本稳定。
+// screen_wordmark.go —— ADMIN 页字标与倒计时。
 
 // wordmarkWidth：字标像素宽（按 Silkscreen 前进宽度累加）。
 func wordmarkWidth(s string) int {
@@ -38,7 +32,7 @@ func drawMaskFlow(c *Canvas, x, y int, blob []byte, w, rb, rows int, now float64
 			if blob[row*rb+col/8]&(0x80>>(col%8)) == 0 {
 				continue
 			}
-			c.pixel(x+col, y+row, balatroFlow(x+col, y+row, now))
+			c.pixel(x+col, y+row, swirlAt(x+col, y+row, now))
 		}
 	}
 }
@@ -56,7 +50,7 @@ func drawWordmarkFlow(c *Canvas, cx, top int, text string, now float64) int {
 			if g.rows[dy]&(1<<uint(g.w-1-gx)) == 0 {
 				continue
 			}
-			c.pixel(x0+dx, top+dy, balatroFlow(x0+dx, top+dy, now))
+			c.pixel(x0+dx, top+dy, swirlAt(x0+dx, top+dy, now))
 		}
 	}
 	return w

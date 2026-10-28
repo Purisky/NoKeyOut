@@ -183,15 +183,13 @@ type stats struct {
 	stop     chan struct{}
 	once     sync.Once
 
-	// 供应商活动指示：magpie 的 lastServedAt 给出"最近服务过的供应商"，
-	// 今日 tokens 增长说明刚刚又发生了一次调用 → 在 activeUntil 前点亮该行图标。
+	// 最近服务过的供应商与活动截止时间。
 	lastProvider string
 	lastTokens   int64
 	activeUntil  time.Time
 }
 
-// providerActiveHold：一次调用后，"该供应商正在被使用"指示保持的时长。
-// 覆盖 2s 用量轮询的抖动，又不至于让图标长时间空转。
+// providerActiveHold：活动指示保持时长。
 const providerActiveHold = 8 * time.Second
 
 func newStats(c *cfg) *stats {
