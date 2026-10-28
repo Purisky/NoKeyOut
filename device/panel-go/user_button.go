@@ -115,10 +115,20 @@ func saveUserButtonAction(action string) error {
 	return nil
 }
 
+type screenToastMsg struct {
+	key   string
+	until time.Time
+}
+
+func (p *panel) showToast(key string, d time.Duration) {
+	p.screenToast.Store(&screenToastMsg{key: key, until: time.Now().Add(d)})
+}
+
 func (p *panel) setScreenOff(off bool) {
 	// 规则：管理面端口开放（ADMIN）期间屏幕必须常亮。拨回 LOCK 后才能熄屏。
 	if off && p.portOpen() {
 		log.Printf("screen: 管理面端口开放中——拒绝熄屏（拨回 LOCK 后才能熄屏）")
+		p.showToast("toast_admin_off", 2500*time.Millisecond)
 		return
 	}
 	was := p.screenOff.Swap(off)

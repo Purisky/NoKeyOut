@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type goldenCase struct {
@@ -544,6 +545,35 @@ func TestAdminTextFits(t *testing.T) {
 			if w := mixedWidth(txt.get(k), SM, CJKFont); w > screenW-16 {
 				t.Fatalf("%s/%s 超宽：%d > %d", lang, k, w, screenW-16)
 			}
+		}
+	}
+}
+
+func TestAdminToast(t *testing.T) {
+	p := &panel{}
+	p.showToast("toast_admin_off", time.Second)
+	got := p.screenToast.Load()
+	if got == nil || time.Until(got.until) <= 0 {
+		t.Fatal("toast 未设置或已过期")
+	}
+	for _, lang := range []string{"zh", "en"} {
+		msg := newTxt(lang).get("toast_admin_off")
+		if w := mixedWidth(msg, SM, CJKFont); w > screenW-12 {
+			t.Fatalf("%s toast 超宽：%d", lang, w)
+		}
+		c := newCanvas(screenW, screenH)
+		c.clear(screenBG)
+		drawToast(c, msg)
+		lit := 0
+		for y := screenH - 22; y < screenH; y++ {
+			for x := 0; x < screenW; x++ {
+				if pxAt(c, x, y) != uint16(screenBG) {
+					lit++
+				}
+			}
+		}
+		if lit < 100 {
+			t.Fatalf("%s toast 没画出来：%d", lang, lit)
 		}
 	}
 }

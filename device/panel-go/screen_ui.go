@@ -41,6 +41,7 @@ var screenMSG = map[string]map[string]string{
 		"errors_today": "今日错误",
 		"admin_hint":   "端口开放，用完拨回 LOCK",
 		"admin_open":   "已开放", "admin_over": "开放超 15 分钟，拨回 LOCK",
+		"toast_admin_off": "ADMIN 模式不允许熄屏",
 		"err_title": "面板不可达", "err_wait": "数据未就绪", "err_hint": "检查 8443 与令牌",
 		"net_eth_t": "网线未连接", "net_eth_h": "插好网口后自动恢复",
 		"net_inet_t": "无外网连通", "net_inet_h": "检查上游与代理设置",
@@ -62,6 +63,7 @@ var screenMSG = map[string]map[string]string{
 		"errors_today": "Errors today",
 		"admin_hint":   "Ports open. Flip back to LOCK.",
 		"admin_open":   "Open for", "admin_over": "Open >15 min. Flip back to LOCK.",
+		"toast_admin_off": "Screen stays on in ADMIN mode",
 		"err_title": "Panel unreachable", "err_wait": "Data not ready",
 		"err_hint":  "Check :8443 and token",
 		"net_eth_t": "No cable", "net_eth_h": "Recovers when the port is connected",
@@ -413,6 +415,15 @@ func screenPageAdmin(c *Canvas, t *Txt, snap map[string]any, anim animState) {
 		hint = t.get("admin_over")
 	}
 	screenCenter(c, screenW/2, 204, screenTrunc(hint, screenW-16), hintCol)
+}
+
+func drawToast(c *Canvas, msg string) {
+	const h = 22
+	y := screenH - h
+	c.fillRect(0, y, screenW, h, screenCard2)
+	c.hline(0, screenW-1, y, screenWarn)
+	msg = screenTrunc(msg, screenW-12)
+	drawMixed(c, screenW/2-mixedWidth(msg, SM, CJKFont)/2, y+6, msg, screenFG, SM, CJKFont)
 }
 
 func fmtAdminDur(sec float64) string {

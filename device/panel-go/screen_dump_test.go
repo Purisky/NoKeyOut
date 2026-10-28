@@ -81,6 +81,15 @@ func TestVisualDump(t *testing.T) {
 	dumpFull("07_admin", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443"}, "zh")
 	dumpFull("07b_admin_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "zh")
 	dumpFull("07e_admin_en", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0}, "en")
+	{
+		c := newCanvas(screenW, screenH)
+		uiRender("main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 192.0},
+			hist, c, 0, "zh", "12:34", animState{})
+		drawToast(c, newTxt("zh").get("toast_admin_off"))
+		if err := os.WriteFile(filepath.Join(dir, "07g_admin_toast.png"), canvasPNG(c, 3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	dumpFull("07f_admin_en_over", "main", map[string]any{"switch": "unlocked", "url": "https://192.0.2.20:8443", "admin_s": 1000.0}, "en")
 	{
 		c := newCanvas(screenW, screenH)

@@ -183,6 +183,13 @@ func (p *panel) screenLoop(backend string) {
 			if active, _ := chal.peek()["active"].(bool); active {
 				uiChallenge(scratch, chal.peek())
 			}
+			if tst := p.screenToast.Load(); tst != nil {
+				if time.Now().Before(tst.until) {
+					drawToast(scratch, newTxt(lang).get(tst.key))
+				} else {
+					p.screenToast.CompareAndSwap(tst, nil)
+				}
+			}
 			// 旧页滑出、新页滑入。
 			unlocked := snapS(snap, "switch") == "unlocked"
 			if !screenInited {

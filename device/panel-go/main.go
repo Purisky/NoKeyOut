@@ -334,7 +334,8 @@ type panel struct {
 	// screenOff：USER 键/Web 触发的熄屏状态。**仅内存**——重启/上电一律亮屏。
 	screenOff atomic.Bool
 	// 所以用原子指针发布（History 自身带锁），渲染线程未启动时为 nil。
-	screenHist atomic.Pointer[History]
+	screenHist  atomic.Pointer[History]
+	screenToast atomic.Pointer[screenToastMsg]
 }
 
 var (
