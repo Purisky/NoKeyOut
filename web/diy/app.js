@@ -1412,7 +1412,7 @@ async function ensure3D() {
       ];
       if (location.protocol === 'file:') scripts.push('assets/board/models/fbx-data.js?v=20261023-1');
       scripts.push('assets/screen/screen-data.js?v=20261022-4');
-      scripts.push('view3d.js?v=20261024-24');
+      scripts.push('view3d.js?v=20261028-1');
       scripts.push('board3d.js?v=20261023-34');
       for (let i = 0; i < scripts.length; i++) {
         await loadScript(scripts[i]);
