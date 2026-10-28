@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NoKeyOut 外壳 · 3D</title>
+<style>
+  :root { --fg:#e7ecf3; --muted:#8b95a4; --line:#262f3a; --bg:#14161a; --accent:#f0a020; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+  canvas { display:block; width:100%; height:100%; cursor:grab; }
+  canvas:active { cursor:grabbing; }
+  #hud { position:fixed; left:20px; top:18px; pointer-events:none; }
+  #hud h1 { margin:0 0 2px; font-size:15px; font-weight:600; letter-spacing:.2px; }
+  #hud .dim { color:var(--muted); font-variant-numeric:tabular-nums; }
+  #bar { position:fixed; left:20px; bottom:18px; display:flex; gap:8px; }
+  button { pointer-events:auto; background:#1d242d; color:var(--fg); border:1px solid var(--line);
+    border-radius:7px; padding:7px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:#3a4654; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+  #legend { position:fixed; right:20px; bottom:18px; display:grid; gap:5px; color:var(--muted); }
+  #legend span { display:flex; align-items:center; gap:7px; }
+  #legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  #tip { position:fixed; right:20px; top:18px; color:var(--muted); text-align:right; }
+  #msg { position:fixed; inset:0; display:grid; place-items:center; color:var(--muted);
+    background:var(--bg); transition:opacity .35s; }
+  #msg.hide { opacity:0; pointer-events:none; }
+  #msg code { color:var(--fg); background:#1d242d; padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <h1>NoKeyOut 外壳</h1>
+  <div class="dim">58 (深) × 56 (宽) × 48.5 (高) mm · 全 3D 打印</div>
+</div>
+<div id="tip">左键旋转 · 右键/Shift 平移 · 滚轮缩放 · 双击复位</div>
+
+<div id="bar">
+  <button id="explode" aria-pressed="false">分解</button>
+  <button id="spin" aria-pressed="false">自动旋转</button>
+  <button id="reset">复位</button>
+</div>
+
+<div id="legend">
+  <span><i style="background:#c9ced6"></i>底壳（屏幕窗 / TF 槽）</span>
+  <span><i style="background:#9aa3ad"></i>盖板（摩擦裙边）</span>
+  <span><i style="background:#b9ab8c"></i>前面板（两侧滑槽）</span>
+  <span><i style="background:#f0a020"></i>按键加长杆 ×1</span>
+</div>
+
+<div id="msg">载入模型…</div>
+
+<script src="../../web/diy/vendor/three/three.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const msg = document.getElementById('msg');
+  if (location.protocol === 'file:') {
+    msg.innerHTML = '需要用本地服务器打开：<br><code>python -m http.server 8137</code>';
+    return;
+  }
+
+  // ---- 二进制 STL ----
+  function parseSTL(buf) {
+    const dv = new DataView(buf);
+    const n = dv.getUint32(80, true);
+    if (buf.byteLength !== 84 + n * 50) throw new Error('不是二进制 STL');
+    const pos = new Float32Array(n * 9), nor = new Float32Array(n * 9);
+    let o = 84;
+    for (let i = 0; i < n; i++) {
+      const nx = dv.getFloat32(o, true), ny = dv.getFloat32(o + 4, true), nz = dv.getFloat32(o + 8, true);
+      o += 12;
+      for (let v = 0; v < 3; v++) {
+        const k = i * 9 + v * 3;
+        pos[k] = dv.getFloat32(o, true);
+        pos[k + 1] = dv.getFloat32(o + 4, true);
+        pos[k + 2] = dv.getFloat32(o + 8, true);
+        nor[k] = nx; nor[k + 1] = ny; nor[k + 2] = nz;
+        o += 12;
+      }
+      o += 2;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    return g;
+  }
+
+  // ---- 场景 ----
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  if (THREE.sRGBEncoding !== undefined && 'outputEncoding' in renderer) {
+    renderer.outputEncoding = THREE.sRGBEncoding;
+  }
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14161a);
+
+  const camera = new THREE.PerspectiveCamera(38, 1, 1, 5000);
+  camera.up.set(0, 0, 1);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3340, 1.35));
+  const key = new THREE.DirectionalLight(0xffffff, 1.45); key.position.set(150, -190, 260);
+  const fill = new THREE.DirectionalLight(0xdfe8ff, 0.55); fill.position.set(-200, 150, 90);
+  scene.add(key, fill);
+
+  const grid = new THREE.GridHelper(520, 52, 0x2b333d, 0x212832);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = -0.25;
+  scene.add(grid);
+
+  // ---- 相机轨道 ----
+  const DEFAULT = { az: -0.92, el: 0.34, dist: 285 };
+  const target = new THREE.Vector3(0, 0, 26);
+  let az = DEFAULT.az, el = DEFAULT.el, dist = DEFAULT.dist;
+  let spin = false, exploded = false, lidLift = 0;
+
+  function applyCam() {
+    const ce = Math.cos(el), se = Math.sin(el);
+    camera.position.set(
+      target.x + dist * ce * Math.sin(az),
+      target.y - dist * ce * Math.cos(az),
+      target.z + dist * se
+    );
+    camera.lookAt(target);
+  }
+
+  // ---- 交互 ----
+  let drag = null, panning = false;
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointerdown', e => {
+    drag = { x: e.clientX, y: e.clientY };
+    panning = e.button === 2 || e.shiftKey;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (panning) {
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+      const k = dist / 1400;
+      target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+    } else {
+      az -= dx * 0.008;
+      el = Math.max(-0.12, Math.min(1.32, el + dy * 0.007));
+    }
+    applyCam();
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    dist = Math.max(120, Math.min(720, dist * (1 + Math.sign(e.deltaY) * 0.09)));
+    applyCam();
+  }, { passive: false });
+  canvas.addEventListener('dblclick', reset);
+
+  function reset() {
+    az = DEFAULT.az; el = DEFAULT.el; dist = DEFAULT.dist;
+    target.set(0, 0, 26);
+    applyCam();
+  }
+
+  const btnExplode = document.getElementById('explode');
+  const btnSpin = document.getElementById('spin');
+  btnExplode.onclick = () => {
+    exploded = !exploded;
+    btnExplode.setAttribute('aria-pressed', String(exploded));
+  };
+  btnSpin.onclick = () => {
+    spin = !spin;
+    btnSpin.setAttribute('aria-pressed', String(spin));
+  };
+  document.getElementById('reset').onclick = reset;
+
+  // ---- 装配 ----
+  const PARTS = [
+    ['base', './out/base.stl', 0xc9ced6],
+    ['lid', './out/lid.stl', 0x9aa3ad],
+    ['panel', './out/panel.stl', 0xb9ab8c],
+    ['button', './out/button.stl', 0xf0a020],
+  ];
+  const loaded = {};
+
+  Promise.all(PARTS.map(async ([name, url, color]) => {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+    const geo = parseSTL(await res.arrayBuffer());
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.04 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = name;
+    loaded[name] = mesh;
+    scene.add(mesh);
+  })).then(() => {
+    // 两根按键杆摆在前面地上
+    loaded.button.position.set(0, -42, 0);
+    loaded.panel.position.set(46, 8, 0);
+    msg.classList.add('hide');
+    applyCam();
+    requestAnimationFrame(tick);
+  }).catch(err => {
+    msg.innerHTML = `载入失败：${err.message}<br><code>python -m http.server 8137</code>`;
+    console.error(err);
+  });
+
+  // ---- 渲染 ----
+  function resize() {
+    const w = innerWidth, h = innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize);
+  resize();
+  applyCam();
+
+  window.__viewer = { renderer, scene, camera, get dist() { return dist; } };
+
+  function tick() {
+    const want = exploded ? 46 : 0;
+    lidLift += (want - lidLift) * 0.12;
+    if (loaded.lid) loaded.lid.position.z = lidLift;
+    if (spin) { az += 0.0032; applyCam(); }
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+})();
+</script>
+</body>
+</html>
