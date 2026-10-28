@@ -650,8 +650,8 @@
     });
     (async () => {
       if (!window.NKScreen) {
-        await load('../assets/screen/wasm_exec.js?v=7');
-        await load('../assets/screen/wasm.js?v=13');
+        await load('../assets/screen/wasm_exec.js?v=8');
+        await load('../assets/screen/wasm.js?v=14');
         await load('../assets/screen/demo-states.js?v=10');
       }
       await window.NKScreen.load();

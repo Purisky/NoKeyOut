@@ -270,9 +270,9 @@ try {
   const sw1 = await cdp.eval(`window.NKView3D.switchVisual()`);
   await cdp.pick('sw:toggle');
   const sw2 = await cdp.eval(`window.NKView3D.switchVisual()`);
-  ok('S4g 滑块在 ON 位与镜像位（OFF）之间移动',
-    sw0 && sw1 && sw2 && sw0.on && !sw1.on && sw2.on &&
-      Math.abs(sw0.x - sw0.base) < 0.05 &&
+  ok('S4g 滑块在 OFF 位与 ON 位之间移动',
+    sw0 && sw1 && sw2 && !sw0.on && sw1.on && !sw2.on &&
+      Math.abs(sw1.x - sw1.base) < 0.05 &&
       Math.abs((sw0.x + sw1.x) / 2 - sw0.axis) < 0.05 &&
       Math.abs(sw1.x - sw0.x) > 0.3 &&
       Math.abs(sw2.x - sw0.x) < 0.05,
@@ -574,6 +574,12 @@ try {
   const scAdmin = await cdp.eval(`({ st: window.__nkState(), dbg: window.NKView3D.screenDebug() })`);
   ok('S6e6 ON（闭合）=ADMIN 显示 IP 页',
     scAdmin.st.sw === true && scAdmin.dbg.source === 'admin', JSON.stringify(scAdmin));
+  await cdp.pick('btn:usr');
+  const usrAdmin = await cdp.eval(`({ dbg: window.NKView3D.screenDebug(), toast: (() => { const el = document.getElementById('toast'); return { hidden: el.hidden, text: el.textContent }; })() })`);
+  ok('S6e6b ADMIN 模式 USR 不熄屏并弹提示',
+    usrAdmin.dbg.visible === true && usrAdmin.toast.hidden === false &&
+      usrAdmin.toast.text.includes('不能熄屏'), JSON.stringify(usrAdmin));
+
   await cdp.pick('sw:toggle');
   const scNoKey = await cdp.eval(`window.NKView3D.screenDebug()`);
   ok('S6e6d OFF（断路）=LOCK 显示常规页', scNoKey.source === 'nokey', JSON.stringify(scNoKey));
@@ -599,7 +605,7 @@ try {
   ok('S6i 重载后恢复到完成状态', (await cdp.state()).idx === 14);
   await cdp.waitFor(`window.NKView3D && window.NKView3D.switchVisual()`, 30000);
   const swAfter = await cdp.eval(`window.NKView3D.switchVisual()`);
-  ok('S6j 重载后开关模型仍在 ON 位（LOCK）', swAfter && swAfter.on === true, JSON.stringify(swAfter));
+  ok('S6j 重载后开关模型仍在 OFF 位（LOCK）', swAfter && swAfter.on === false, JSON.stringify(swAfter));
   await cdp.waitFor(`window.NKView3D.screenDebug && window.NKView3D.screenDebug().visible`, 30000);
   const scAfter = await cdp.eval(`({ pose: window.NKBOARD3D.screenPose(), dbg: window.NKView3D.screenDebug() })`);
   ok('S6k 重载后屏幕仍在正面且点亮', scAfter.pose === 'over' && scAfter.dbg.visible === true, JSON.stringify(scAfter));

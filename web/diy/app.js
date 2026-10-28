@@ -323,7 +323,7 @@ function loadState() {
   s.screenFlipped = !!raw.screenFlipped || s.screenFlipped;
   s.screenOn = !!raw.screenOn || s.screenOn;
   s.screenLit = raw.screenLit != null ? !!raw.screenLit : s.screenLit;
-  if (!s.sw && s.screenOn) s.screenLit = true; /* 端口开放不允许熄屏 */
+  if (s.sw && s.screenOn) s.screenLit = true; /* 端口开放不允许熄屏 */
   s.completeDismissed = !!raw.completeDismissed;
   s.tf.flashed = !!raw.tfFlashed || s.tf.flashed;
   return s;
