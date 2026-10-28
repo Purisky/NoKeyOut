@@ -76,11 +76,11 @@ func TestSharedAxisComposite(t *testing.T) {
 
 // 字标流光：静态恒为纯色；动画时同一点颜色随时间变化，且落在品牌渐变色域内。
 func TestWordmarkFlowColors(t *testing.T) {
-	if got := flowColorAt(100, 0); got != screenFG {
+	if got := balatroFlow(100, 100, 0); got != screenFG {
 		t.Fatalf("静态应为纯色，got %04x", got)
 	}
-	a := flowColorAt(100, 0.4)
-	b := flowColorAt(100, 1.3)
+	a := balatroFlow(100, 100, 0.4)
+	b := balatroFlow(100, 100, 1.3)
 	if a == b {
 		t.Fatal("流光颜色不随时间变化")
 	}

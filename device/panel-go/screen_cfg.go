@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package main
 
 // screen_cfg.go —— 物理屏的尺寸与方向（面板可改，落盘到 panel 可写目录）
