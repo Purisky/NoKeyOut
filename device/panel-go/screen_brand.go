@@ -83,6 +83,25 @@ func inkOnDark(c uint16) uint16 {
 	return screenFG
 }
 
+// logoSpritesAA18/32：2bpp 覆盖度图标的覆盖层（如 OpenDesign 的细箭头）。
+var (
+	logoSpritesAA18 = map[string][]byte{}
+	logoSpritesAA32 = map[string][]byte{}
+)
+
+// logoMaskAA：2bpp 覆盖度掩码；没有就返回 ok=false。
+func logoMaskAA(mk providerMark, size int) ([]byte, bool) {
+	if mk.logo == "" {
+		return nil, false
+	}
+	if size == 18 {
+		b, ok := logoSpritesAA18[mk.logo]
+		return b, ok
+	}
+	b, ok := logoSpritesAA32[mk.logo]
+	return b, ok
+}
+
 // logoMask：取指定尺寸的供应商图标掩码（1bpp，硬像素）；没有就返回 ok=false（调用方退回字母）。
 func logoMask(mk providerMark, size int) ([]byte, bool) {
 	if mk.logo == "" {

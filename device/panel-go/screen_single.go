@@ -309,6 +309,10 @@ func rowIcon(c *Canvas, m map[string]any, x, y, size int) {
 	mk := providerBrand(snapS(m, "provider"), snapS(m, "name"))
 	// 不垫色块：源图标本身是"套框"形状（opencode 就是方框标），色块+字形会读成
 	// "控件边框"而不是 logo。直接让品牌色字形落在行背景上，更像标志、也更通透。
+	if blob, ok := logoMaskAA(mk, size); ok {
+		c.bitmapAA(x, y, blob, size, (size+3)/4, size, inkOnDark(mk.color))
+		return
+	}
 	if blob, ok := logoMask(mk, size); ok {
 		c.bitmap(x, y, blob, size, (size+7)/8, size, inkOnDark(mk.color))
 		return

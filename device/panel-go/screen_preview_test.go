@@ -302,8 +302,8 @@ func TestOpenDesignBrandIcon(t *testing.T) {
 		t.Fatalf("opendesign logo key = %q, want opendesign", mk.logo)
 	}
 	for _, size := range []int{18, 32} {
-		if _, ok := logoMask(mk, size); !ok {
-			t.Fatalf("缺 %dpx opendesign 图标掩码", size)
+		if _, ok := logoMaskAA(mk, size); !ok {
+			t.Fatalf("缺 %dpx opendesign 2bpp 图标掩码", size)
 		}
 	}
 }
