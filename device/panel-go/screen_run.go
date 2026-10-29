@@ -105,6 +105,7 @@ func (p *panel) screenLoop(backend string) {
 	ring := -1.0             // 圆环扫掠当前值（-1=未初始化）
 	powerOn := dev != nil    // 首帧也走一次 CRT 开机动画（物理屏 RAM 不可信）
 	startedAt := time.Now()
+	lastFull := startedAt // 周期性整幅重推，兜住 SPI 半帧/面板 RAM 漂移
 	// LOCK ↔ ADMIN 页面切换（300ms）。
 	prevUnlocked := false
 	transStart := time.Time{}
@@ -222,6 +223,12 @@ func (p *panel) screenLoop(backend string) {
 			default:
 				transStart = time.Time{}
 				copy(canvas.Buf, scratch.Buf)
+				// 每 60s 整幅重推一次：即使某次 SPI 写入丢失/短写，
+				// 残留也不会永久留在屏上（差分 prev 已无法发现它）。
+				if tick.Sub(lastFull) >= time.Minute {
+					canvas.invalidate()
+					lastFull = tick
+				}
 				canvas.flush(dev)
 			}
 		} else {
@@ -380,6 +387,9 @@ func (p *panel) screenPause(dev screenDev, c *Canvas) {
 	}
 	if st, ok := dev.(*st7789); ok {
 		_ = st.wake()
+	}
+	if c != nil {
+		c.invalidate() // 休眠期间面板 RAM 未必还等于 prev；醒来先整幅重推
 	}
 	if p.bl != nil {
 		p.bl.set(true)

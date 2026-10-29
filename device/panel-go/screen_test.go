@@ -12,6 +12,7 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"math/rand/v2"
 	"os"
@@ -189,11 +190,12 @@ type memSpi struct {
 	}
 }
 
-func (m *memSpi) write(b []byte) {
+func (m *memSpi) write(b []byte) error {
 	m.rec = append(m.rec, struct {
 		dc  bool
 		buf []byte
 	}{dc: cur, buf: append([]byte(nil), b...)})
+	return nil
 }
 
 var cur bool // 记录 DC 状态（memPin 同步设置）
@@ -575,5 +577,56 @@ func TestAdminToast(t *testing.T) {
 		if lit < 100 {
 			t.Fatalf("%s toast 没画出来：%d", lang, lit)
 		}
+	}
+}
+
+// flush 写失败时不能把 prev 前移：否则屏上残留的旧像素会被当成“已送达”，
+// 后续差分永远不会再覆盖它。
+type flakyDev struct {
+	fail  bool
+	calls int
+}
+
+func (d *flakyDev) pushRect(x0, y0, x1, y1 int, data []byte) error {
+	d.calls++
+	if d.fail {
+		return errors.New("spi short write")
+	}
+	return nil
+}
+
+func TestFlushRetriesAfterPushError(t *testing.T) {
+	c := newCanvas(4, 2)
+	c.clear(0)
+	c.pixel(1, 0, 0xF800)
+	d := &flakyDev{fail: true}
+	if c.flush(d) {
+		t.Fatal("pushRect 失败时 flush 应返回 false")
+	}
+	if c.prev[2] == c.Buf[2] {
+		t.Fatal("失败后不应把 prev 前移")
+	}
+	d.fail = false
+	if !c.flush(d) {
+		t.Fatal("重试应成功并推送")
+	}
+	if d.calls != 2 {
+		t.Fatalf("calls = %d, want 2", d.calls)
+	}
+	if c.flush(d) {
+		t.Fatal("成功后无差异，不应再推送")
+	}
+}
+
+// ST7789 的 SPI 写失败必须冒泡到 flush；旧实现永远返回 nil，导致 prev 前移、
+// 屏上旧像素永久残留。
+type errSpi struct{}
+
+func (errSpi) write([]byte) error { return errors.New("spi down") }
+
+func TestST7789PushRectPropagatesError(t *testing.T) {
+	st := newST7789(errSpi{}, &memPin{}, &memPin{}, 0, 0, 0, false)
+	if err := st.pushRect(0, 0, 1, 1, []byte{0, 0, 0, 0}); err == nil {
+		t.Fatal("pushRect 应把 SPI 错误传上去")
 	}
 }

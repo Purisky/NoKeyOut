@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"syscall"
 	"unsafe"
@@ -41,17 +42,22 @@ func openSPI(dev string, hz uint32) (*spiBus, error) {
 // spidev 默认 bufsiz=4096：单次 write 超过会 EMSGSIZE，按 4096 分块写。
 const spiChunk = 4096
 
-func (s *spiBus) write(b []byte) {
+func (s *spiBus) write(b []byte) error {
 	for len(b) > 0 {
 		n := len(b)
 		if n > spiChunk {
 			n = spiChunk
 		}
-		if _, err := s.f.Write(b[:n]); err != nil {
-			return
+		written, err := s.f.Write(b[:n])
+		if err != nil {
+			return err
 		}
-		b = b[n:]
+		if written <= 0 {
+			return io.ErrShortWrite
+		}
+		b = b[written:]
 	}
+	return nil
 }
 
 func (s *spiBus) close() { _ = s.f.Close() }

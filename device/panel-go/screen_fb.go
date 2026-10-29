@@ -4,30 +4,31 @@ package main
 
 import (
 	"bytes"
+	"log"
 	"math"
 )
 
 // 调色板（16 位 RGB565）
 var (
-	screenBG     = rgb565(14, 17, 23)
-	screenCard   = rgb565(22, 28, 38)
-	screenCard2  = rgb565(30, 38, 52)
-	screenBorder = rgb565(44, 55, 72)
-	screenFG     = rgb565(232, 238, 244)
-	screenMuted  = rgb565(138, 152, 168)
-	screenAccent = rgb565(76, 141, 255)
+	screenBG        = rgb565(14, 17, 23)
+	screenCard      = rgb565(22, 28, 38)
+	screenCard2     = rgb565(30, 38, 52)
+	screenBorder    = rgb565(44, 55, 72)
+	screenFG        = rgb565(232, 238, 244)
+	screenMuted     = rgb565(138, 152, 168)
+	screenAccent    = rgb565(76, 141, 255)
 	screenAccentDim = rgb565(34, 66, 122) // 趋势/次要图形：压暗，避免与状态色抢眼
-	screenOK     = rgb565(63, 178, 127)
-	screenWarn   = rgb565(229, 163, 60)
-	screenDanger = rgb565(229, 83, 75)
-	screenLockBG = rgb565(36, 14, 16)
+	screenOK        = rgb565(63, 178, 127)
+	screenWarn      = rgb565(229, 163, 60)
+	screenDanger    = rgb565(229, 83, 75)
+	screenLockBG    = rgb565(36, 14, 16)
 	// ADMIN 访问页：OpenDesign 方案的单一青色强调（与 LOCK 页的蓝色区分状态），
 	// 白色只用于产品标识与文字；红色只在超过 15 分钟阈值后出现。
 	adminAccent      = rgb565(40, 196, 178)
 	adminAccentTrack = rgb565(18, 46, 48)
 	adminBarTrack    = rgb565(30, 37, 44)
-	screenDim     = rgb565(58, 68, 84)  // 未连接/未知（暗点）
-	screenDangerDim = rgb565(122, 44, 42) // 锁定脉冲暗相位
+	screenDim        = rgb565(58, 68, 84)  // 未连接/未知（暗点）
+	screenDangerDim  = rgb565(122, 44, 42) // 锁定脉冲暗相位
 	// 周期档位色（5h 青 / 7d 蓝 / 月 紫）：标签色只做**类型区分**，绝不与
 	// 语义色（OK 绿 / WARN 黄 / DANGER 红）撞脸——否则「5h」的绿和
 	screenWinShort = rgb565(94, 199, 214)  // 青
@@ -363,6 +364,9 @@ func (c *Canvas) bitmapClipped(x, y int, blob []byte, w, rb, rows int, hi, lo by
 
 type screenBox struct{ x0, y0, x1, y1 int }
 
+// lastPushErr 只在渲染 goroutine 里读写，用于压住重复的 SPI 错误日志。
+var lastPushErr string
+
 // dirty：与 prev 的最小差异外接矩形；无差异返回 nil。
 func (c *Canvas) dirty() *screenBox {
 	stride := c.W * 2
@@ -400,6 +404,8 @@ func (c *Canvas) dirty() *screenBox {
 }
 
 // flush：把差异矩形推给屏后端（实现 screenDev 接口）。
+// 只有整块写成功才把 prev 前移；SPI 半截/报错时保留差异，下一帧重试，
+// 否则 prev 会“谎报”已送达，屏上的旧像素再也没人覆盖（更新残留）。
 func (c *Canvas) flush(dev screenDev) bool {
 	box := c.dirty()
 	if box == nil {
@@ -410,8 +416,15 @@ func (c *Canvas) flush(dev screenDev) bool {
 	for y := box.y0; y <= box.y1; y++ {
 		data = append(data, c.Buf[y*stride+box.x0*2:y*stride+(box.x1+1)*2]...)
 	}
-	_ = dev.pushRect(box.x0, box.y0, box.x1, box.y1, data)
-	// 帧率被 GC 拖到 3fps 量级）；脏区通常只有几十字节
+	if err := dev.pushRect(box.x0, box.y0, box.x1, box.y1, data); err != nil {
+		// 同一错误只记一次：SPI 坏掉时不要每帧刷日志。
+		if msg := err.Error(); msg != lastPushErr {
+			log.Printf("screen: pushRect %v failed: %v", box, err)
+			lastPushErr = msg
+		}
+		return false
+	}
+	lastPushErr = ""
 	for y := box.y0; y <= box.y1; y++ {
 		copy(c.prev[y*stride:(y+1)*stride], c.Buf[y*stride:(y+1)*stride])
 	}

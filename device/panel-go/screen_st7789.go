@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-type byteSink interface{ write(b []byte) }
+type byteSink interface{ write(b []byte) error }
 type pinSetter interface{ set(on bool) }
 
 type st7789 struct {
@@ -35,18 +35,25 @@ func newST7789(spi byteSink, dc, rst pinSetter, madctl, xoff, yoff int, invert b
 }
 
 // cmd：命令字节 DC=0，参数 DC=1（与卖家驱动 LCD_WR_REG / LCD_WR_DATA8 一致）。
-func (s *st7789) cmd(c byte, args ...byte) {
+func (s *st7789) cmd(c byte, args ...byte) { _ = s.cmdE(c, args...) }
+
+func (s *st7789) cmdE(c byte, args ...byte) error {
 	s.dc.set(false)
-	s.spi.write([]byte{c})
+	if err := s.spi.write([]byte{c}); err != nil {
+		return err
+	}
 	if len(args) > 0 {
 		s.dc.set(true)
-		s.spi.write(args)
+		return s.spi.write(args)
 	}
+	return nil
 }
 
-func (s *st7789) data(b []byte) {
+func (s *st7789) data(b []byte) { _ = s.dataE(b) }
+
+func (s *st7789) dataE(b []byte) error {
 	s.dc.set(true)
-	s.spi.write(b)
+	return s.spi.write(b)
 }
 
 func (s *st7789) reset() {
@@ -85,19 +92,27 @@ func (s *st7789) init() {
 	time.Sleep(20 * time.Millisecond)
 }
 
-func (s *st7789) window(x0, y0, x1, y1 int) {
+func (s *st7789) window(x0, y0, x1, y1 int) { _ = s.windowE(x0, y0, x1, y1) }
+
+func (s *st7789) windowE(x0, y0, x1, y1 int) error {
 	xs, xe := x0+s.xoff, x1+s.xoff
 	ys, ye := y0+s.yoff, y1+s.yoff
-	s.cmd(0x2A, byte(xs>>8), byte(xs), byte(xe>>8), byte(xe)) // CASET
-	s.cmd(0x2B, byte(ys>>8), byte(ys), byte(ye>>8), byte(ye)) // RASET
+	if err := s.cmdE(0x2A, byte(xs>>8), byte(xs), byte(xe>>8), byte(xe)); err != nil { // CASET
+		return err
+	}
+	return s.cmdE(0x2B, byte(ys>>8), byte(ys), byte(ye>>8), byte(ye)) // RASET
 }
 
 // pushRect：Canvas.flush() 的推送目标；data 为线上字节序矩形像素。
+// 错误必须向上传：flush 只有在整块写成功后才能把 prev 前移。
 func (s *st7789) pushRect(x0, y0, x1, y1 int, data []byte) error {
-	s.window(x0, y0, x1, y1)
-	s.cmd(0x2C) // RAMWR
-	s.data(data)
-	return nil
+	if err := s.windowE(x0, y0, x1, y1); err != nil {
+		return err
+	}
+	if err := s.cmdE(0x2C); err != nil { // RAMWR
+		return err
+	}
+	return s.dataE(data)
 }
 
 func (s *st7789) selftest() error {

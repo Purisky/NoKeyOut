@@ -50,8 +50,9 @@ func (s *screenControl) flushLocked() {
 	if s.dev == nil || s.canvas == nil {
 		return
 	}
-	s.canvas.flush(s.dev)
-	s.ver.Add(1)
+	if s.canvas.flush(s.dev) {
+		s.ver.Add(1)
+	}
 }
 
 // ---------------------------------------------------------------- 颜色解析

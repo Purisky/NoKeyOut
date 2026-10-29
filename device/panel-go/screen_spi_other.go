@@ -21,6 +21,6 @@ func openSPI(dev string, hz uint32) (*spiBus, error) {
 	return nil, fmt.Errorf("spidev 仅在 Linux 可用（%s）", dev)
 }
 
-func (s *spiBus) write([]byte) {}
+func (s *spiBus) write([]byte) error { return nil }
 
 func (s *spiBus) close() {}
