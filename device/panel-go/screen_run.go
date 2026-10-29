@@ -223,9 +223,9 @@ func (p *panel) screenLoop(backend string) {
 			default:
 				transStart = time.Time{}
 				copy(canvas.Buf, scratch.Buf)
-				// 每 60s 整幅重推一次：即使某次 SPI 写入丢失/短写，
+				// 每 10s 整幅重推一次：即使某次 SPI 写入丢失/短写，
 				// 残留也不会永久留在屏上（差分 prev 已无法发现它）。
-				if tick.Sub(lastFull) >= time.Minute {
+				if tick.Sub(lastFull) >= 10*time.Second {
 					canvas.invalidate()
 					lastFull = tick
 				}
