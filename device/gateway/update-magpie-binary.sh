@@ -28,34 +28,42 @@ LANIP=$(sed -n 's/.*MAGPIE_PUBLIC_URL=http:\/\/\([0-9.]*\).*/\1/p' "$UNIT")
 [ -n "$LANIP" ] || LANIP=127.0.0.1
 
 say "1/5 获取 $ARCH $NEWVER（镜像提取）"
-# assets 全是 magpie-cli-*）。两种架构统一从官方多架构镜像提取。
-IMG="ghcr.io/yetone/magpie:$NEWVER"
-PULLER="${NOKEYOUT_PULLER:-/usr/local/lib/nokeyout/bin/magpie-pull}"
-if [ -x "$PULLER" ]; then
-  # 首选：静态 OCI 直取器（Buildroot 目标同可用）
-  echo "  magpie-pull $IMG"
-  "$PULLER" "$IMG" -o "/tmp/magpie-$NEWVER" || "$PULLER" "ghcr.nju.edu.cn/yetone/magpie:$NEWVER" -o "/tmp/magpie-$NEWVER" || \
-    die "OCI 直取失败"
+# 预置文件优先：每日任务/离线部署把二进制放到 /tmp/magpie-<版本> 后直接使用，
+# 设备不必能访问 ghcr。MAGPIE_SRC 可指向别处（仅 root 本地路径）。
+STAGED="${MAGPIE_SRC:-/tmp/magpie-$NEWVER}"
+if [ -s "$STAGED" ] && is_elf "$STAGED"; then
+  echo "  pre-staged $STAGED"
+  [ "$STAGED" = "/tmp/magpie-$NEWVER" ] || cp "$STAGED" "/tmp/magpie-$NEWVER"
 else
-  # 回退：docker 拉起守护进程提二进制（arm64 与 docker 分叉均测过）
-  systemctl is-active --quiet docker 2>/dev/null || systemctl start docker
-  echo "  docker pull $IMG"
-  docker pull --quiet "$IMG" >/dev/null 2>&1 || \
-    docker pull --quiet "ghcr.nju.edu.cn/yetone/magpie:$NEWVER" >/dev/null 2>&1 || \
-    die "拉取镜像失败（ghcr denied 时用 ghcr.nju.edu.cn；或先 docker pull 好再跑）"
-  CID=$(docker create "$IMG" 2>/dev/null)
-  [ -n "$CID" ] || die "docker create 失败"
-  # 镜像里 /usr/local/bin/magpie 是指向 /magpie 的软链；docker cp 不 Dereference，
-  # 必须拷真实文件（用体积 >1MB 过滤软链）
-  for p in /magpie /usr/local/bin/magpie /usr/bin/magpie /app/magpie; do
-    if docker cp "$CID:$p" "/tmp/magpie-$NEWVER" 2>/dev/null && \
-       [ "$(stat -c %s "/tmp/magpie-$NEWVER" 2>/dev/null || echo 0)" -gt 1048576 ]; then
-      break
-    fi
-    rm -f "/tmp/magpie-$NEWVER"
-  done
-  [ -f "/tmp/magpie-$NEWVER" ] || { docker rm -f "$CID" >/dev/null 2>&1; die "镜像里找不到 magpie 二进制"; }
-  docker rm -f "$CID" >/dev/null 2>&1
+  # assets 全是 magpie-cli-*）。两种架构统一从官方多架构镜像提取。
+  IMG="ghcr.io/yetone/magpie:$NEWVER"
+  PULLER="${NOKEYOUT_PULLER:-/usr/local/lib/nokeyout/bin/magpie-pull}"
+  if [ -x "$PULLER" ]; then
+    # 首选：静态 OCI 直取器（Buildroot 目标同可用）
+    echo "  magpie-pull $IMG"
+    "$PULLER" "$IMG" -o "/tmp/magpie-$NEWVER" || "$PULLER" "ghcr.nju.edu.cn/yetone/magpie:$NEWVER" -o "/tmp/magpie-$NEWVER" || \
+      die "OCI 直取失败"
+  else
+    # 回退：docker 拉起守护进程提二进制（arm64 与 docker 分叉均测过）
+    systemctl is-active --quiet docker 2>/dev/null || systemctl start docker
+    echo "  docker pull $IMG"
+    docker pull --quiet "$IMG" >/dev/null 2>&1 || \
+      docker pull --quiet "ghcr.nju.edu.cn/yetone/magpie:$NEWVER" >/dev/null 2>&1 || \
+      die "拉取镜像失败（ghcr denied 时用 ghcr.nju.edu.cn；或先 docker pull 好再跑）"
+    CID=$(docker create "$IMG" 2>/dev/null)
+    [ -n "$CID" ] || die "docker create 失败"
+    # 镜像里 /usr/local/bin/magpie 是指向 /magpie 的软链；docker cp 不 Dereference，
+    # 必须拷真实文件（用体积 >1MB 过滤软链）
+    for p in /magpie /usr/local/bin/magpie /usr/bin/magpie /app/magpie; do
+      if docker cp "$CID:$p" "/tmp/magpie-$NEWVER" 2>/dev/null && \
+         [ "$(stat -c %s "/tmp/magpie-$NEWVER" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        break
+      fi
+      rm -f "/tmp/magpie-$NEWVER"
+    done
+    [ -f "/tmp/magpie-$NEWVER" ] || { docker rm -f "$CID" >/dev/null 2>&1; die "镜像里找不到 magpie 二进制"; }
+    docker rm -f "$CID" >/dev/null 2>&1
+  fi
 fi
 is_elf "/tmp/magpie-$NEWVER" || die "不是 ELF"
 chmod 0755 "/tmp/magpie-$NEWVER"
