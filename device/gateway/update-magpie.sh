@@ -5,8 +5,8 @@
 # 本脚本从*正在运行的容器*反推运行参数（env/卷/端口/命令），只替换镜像 tag，
 # 避免手写 docker run 与现网漂移。
 #
-#   sudo ./update-magpie.sh 0.1.2144            # 升级到指定版本
-#   sudo ./update-magpie.sh 0.1.2144 --dry-run  # 同版本空跑（验证流程，不动版本）
+#   sudo ./update-magpie.sh 0.1.2186            # 升级到指定版本
+#   sudo ./update-magpie.sh 0.1.2186 --dry-run  # 同版本空跑（验证流程，不动版本）
 #
 # 步骤：记录回滚点 → pull（失败即弃，现网不动）→ 重建 → 健康等待 →
 #       冒烟（/v1/models 200 + 临时 key 真调一次）→ 失败自动回滚并报告。
