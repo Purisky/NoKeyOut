@@ -33,7 +33,7 @@ fi
 if [ ! -s /tmp/magpie-new ]; then
   # 容器不可用 → 从官方多架构镜像提取。release 资产只有 CLI、不是服务端二进制，
   say "1b/5 容器不可用，从官方镜像提取"
-  IVER="${MAGPIE_IMAGE_VERSION:-0.1.1892}"
+  IVER="${MAGPIE_IMAGE_VERSION:-0.1.2144}"
   IMG="ghcr.io/yetone/magpie:$IVER"
   systemctl is-active --quiet docker 2>/dev/null || systemctl start docker
   docker pull --quiet "$IMG" >/dev/null 2>&1 || \

@@ -58,7 +58,7 @@ else
     install -m 0755 "$MAGPIE_BIN" "$MAGPIE_TARGET"
   elif [ -x "$REL/tools/magpie-pull/magpie-pull" ]; then
     # 兜底：release 自带的静态直取器现拉 pinned 版（走本机代理）
-    "$REL/tools/magpie-pull/magpie-pull" ghcr.io/yetone/magpie:0.1.1892 -o "$MAGPIE_TARGET" || true
+    "$REL/tools/magpie-pull/magpie-pull" ghcr.io/yetone/magpie:0.1.2144 -o "$MAGPIE_TARGET" || true
   fi
 fi
 [ -s "$MAGPIE_TARGET" ] && echo "  magpie 已随镜像" || \
