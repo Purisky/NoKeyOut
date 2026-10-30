@@ -15,7 +15,7 @@
 
 services:
   magpie:
-    image: ghcr.io/yetone/magpie:0.1.2186
+    image: ghcr.io/yetone/magpie:0.1.2270
     command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]  # 容器内全网卡；发布绑宿主回环
     environment:
       MAGPIE_ADDR: "0.0.0.0:3425"                # 网关面：LAN（客户端唯一入口）
