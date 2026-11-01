@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-#   sudo ./update-magpie-binary.sh 0.1.2606 [--arch aarch64]
+#   sudo ./update-magpie-binary.sh 0.1.2643 [--arch aarch64]
 set -euo pipefail
 NEWVER="${1:-}"; shift || true
 ARCH="${ARCH:-$(uname -m)}"
