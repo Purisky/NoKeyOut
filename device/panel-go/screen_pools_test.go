@@ -56,8 +56,9 @@ func TestPollQuotasFeedsPoolsRenderer(t *testing.T) {
 	if !snapB(rows[0], "has_reset") {
 		t.Fatal("Month 有 resetsAt，has_reset 应为 true")
 	}
-	if got, _ := snapF(rows[0], "period_s"); got != float64(31*24*3600) {
-		t.Fatalf("Month 周期应为 31 天（2026-10），got %v", got)
+	wantMonth := float64(monthLength(time.Now()) / time.Second)
+	if got, _ := snapF(rows[0], "period_s"); got != wantMonth {
+		t.Fatalf("Month 周期应为当前自然月长度 %v 秒，got %v", wantMonth, got)
 	}
 	if snapB(rows[2], "has_reset") {
 		t.Fatal("5 hours 没有 resetsAt，has_reset 应为 false（不编造）")
