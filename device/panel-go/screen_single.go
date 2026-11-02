@@ -305,8 +305,52 @@ func moneyValue(m map[string]any) string {
 
 // rowIcon：图标 = **深色块 + 品牌色字形**（源 SVG 全是单色 currentColor，
 // 所以「白字形压品牌色块」在淡品牌色上会糊；见 inkOnDark）。
-func rowIcon(c *Canvas, m map[string]any, x, y, size int) {
+// 供应商处于调用窗口时，在图标**右下角**叠一枚活动徽章：DeepSeek 播放官方鲸鱼尾，
+// 其它品牌用通用指示。图标本身保持静态。
+func rowIcon(c *Canvas, m map[string]any, x, y, size int, active bool, now float64, deep bool) {
 	mk := providerBrand(snapS(m, "provider"), snapS(m, "name"))
+	drawStaticIcon(c, mk, x, y, size)
+	if active {
+		drawActivityBadge(c, x, y, size, now, deep)
+	}
+}
+
+// whaleInk：DeepSeek Harness running 颜色（深色主题
+// --dsw-alias-label-deep-diving = 70% deepseek-500 + 30% blue-950 ≈ rgb(52,94,186)）。
+var whaleInk = rgb565(52, 94, 186)
+
+// drawActivityBadge：右下角徽章。先铺 1px 底色，避免徽章压在任何 logo 上看不清。
+func drawActivityBadge(c *Canvas, x, y, size int, now float64, deep bool) {
+	side := 15
+	if size >= 28 {
+		side = 21
+	}
+	bx, by := x+size-side, y+size-side
+	if deep {
+		frames := whaleFrames15
+		if side == 21 {
+			frames = whaleFrames21
+		}
+		i := 0
+		if now > 0 && whaleFrameMS > 0 {
+			i = int(now*1000) / whaleFrameMS % len(frames)
+		}
+		// 直接 alpha 合成到图标上：不再铺底色方块，半透明边缘自然透出 logo。
+		c.bitmapAA(bx, by, frames[i], side, (side+3)/4, side, whaleInk)
+		return
+	}
+	thick := 2
+	if side >= 21 {
+		thick = 3
+	}
+	if now > 0 {
+		drawM3Indeterminate(c, bx+side/2, by+side/2, side/2-1, thick, screenAccent, now, 1)
+		return
+	}
+	c.fillRect(bx+side/2-1, by+side/2-1, 2, 2, screenAccent)
+}
+
+func drawStaticIcon(c *Canvas, mk providerMark, x, y, size int) {
 	// 不垫色块：源图标本身是"套框"形状（opencode 就是方框标），色块+字形会读成
 	// "控件边框"而不是 logo。直接让品牌色字形落在行背景上，更像标志、也更通透。
 	if blob, ok := logoMaskAA(mk, size); ok {
@@ -329,24 +373,32 @@ func providerActive(snap map[string]any, provider string) bool {
 	return ok && nowFn().Unix() < int64(until)
 }
 
-// drawProviderSpinner：图标外圈的不确定指示器。
-func drawProviderSpinner(c *Canvas, cx, cy, r int, now float64) {
-	drawM3Indeterminate(c, cx, cy, r, 2, screenAccent, now)
+// quotaAccount：多账号供应商才显示账号；脱敏时显示稳定序号。
+func quotaAccount(m map[string]any, mask bool) string {
+	n, ok := snapF(m, "accounts_n")
+	if !ok || n < 2 {
+		return ""
+	}
+	if mask {
+		i, ok := snapF(m, "account_idx")
+		if !ok || i <= 0 {
+			return ""
+		}
+		return "#" + strconv.Itoa(int(i))
+	}
+	return snapS(m, "account")
 }
 
 // drawQuotaRowDetailed：详细行（36px）——图标 32 ｜ 第一行：供应商名 ｜ 第二行：周期 + 值区（条/倒计时）。
 // 内容 8px 边距（与其它模块同一网格）；行分隔线通栏（0..屏宽-1）。
 // inset = 右侧预留宽度（模块末尾的 "+N" 提示占位）。
-func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64) {
+func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, mask bool, deep bool) {
 	c.fillRect(0, y, screenW, bandPoolH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+2, iconDetailed)
-	if active {
-		drawProviderSpinner(c, x+iconDetailed/2, y+2+iconDetailed/2, iconDetailed/2+1, now)
-	}
+	rowIcon(c, m, x, y+2, iconDetailed, active, now, deep)
 
 	tx := x + iconDetailed + 6
 	name := snapS(m, "name")
@@ -354,7 +406,7 @@ func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any
 		name = "?"
 	}
 	// 同一供应商的多个账号窗口名完全一样 → 名称行必须带账号，否则两条一模一样
-	if acc := snapS(m, "account"); acc != "" {
+	if acc := quotaAccount(m, mask); acc != "" {
 		name += " · " + acc
 	}
 	drawMixed(c, tx, y+3, screenTrunc(name, screenW-8-tx-inset), screenFG, SM, CJKFont)
@@ -366,16 +418,13 @@ func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any
 }
 
 // drawQuotaRowCompact：简易行（20px）——图标 + 周期 + 值区（条/倒计时），整行一条。
-func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64) {
+func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, _ bool, deep bool) {
 	c.fillRect(0, y, screenW, bandCompactH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+1, iconCompact)
-	if active {
-		drawProviderSpinner(c, x+iconCompact/2, y+1+iconCompact/2, iconCompact/2, now)
-	}
+	rowIcon(c, m, x, y+1, iconCompact, active, now, deep)
 
 	bx := x + iconCompact + 6
 	drawWindowLabel(c, bx, y+4, m)

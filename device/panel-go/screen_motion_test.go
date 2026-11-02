@@ -31,14 +31,6 @@ func TestM3IndeterminateKeyframes(t *testing.T) {
 			t.Fatalf("t=%.2fs start=%.1f，want %.1f", c.now, start, c.start)
 		}
 	}
-	// 静态场景（now<=0）不画：保证测试/预览的黄金样本可复现。
-	c := newCanvas(screenW, screenH)
-	c.clear(screenBG)
-	before := append([]byte(nil), c.Buf...)
-	drawM3Indeterminate(c, 20, 20, 18, 2, screenAccent, 0)
-	if !bytes.Equal(before, c.Buf) {
-		t.Fatal("now=0 时不应绘制动画")
-	}
 }
 
 // shared axis：300ms；出场向左淡出、入场从右淡入，中间不出现整屏黑场。

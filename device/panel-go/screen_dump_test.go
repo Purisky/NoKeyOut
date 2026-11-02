@@ -107,14 +107,42 @@ func TestVisualDump(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 供应商活动：图标外圈 M3 不确定圆形指示器（动画时钟固定 1.1s 便于目检）
+	// 供应商活动：DeepSeek 播放官方鲸鱼尾动画（12 帧处便于目检）
 	snapAct := testSnap()
-	snapAct["active_provider"] = "opencode-go"
+	snapAct["active_provider"] = "deepseek"
+	snapAct["active_deepseek"] = true
 	snapAct["active_until"] = nowFn().Add(time.Hour).Unix()
 	{
 		c := newCanvas(screenW, screenH)
-		uiRender("main", snapAct, hist, c, 0, "zh", "12:34", animState{now: 1.1})
+		uiRender("main", snapAct, hist, c, 0, "zh", "12:34", animState{now: 0.6})
 		if err := os.WriteFile(filepath.Join(dir, "07c_provider_active.png"), canvasPNG(c, 3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 多账号：同一供应商两条不同账号（未脱敏 → 显示账号；脱敏 → 显示 #序号）
+	multi := testSnap()
+	multi["pools"] = []any{
+		map[string]any{"name": "DeepSeek", "provider": "deepseek", "window": "5 hours",
+			"kind": "plan", "state": int(poolOK), "has_val": true, "used_pct": 20.0, "remain_pct": 80.0,
+			"account": "work@example.com", "accounts_n": 2.0, "account_idx": 2.0},
+		map[string]any{"name": "DeepSeek", "provider": "deepseek", "window": "5 hours",
+			"kind": "plan", "state": int(poolOK), "has_val": true, "used_pct": 40.0, "remain_pct": 60.0,
+			"account": "personal@example.com", "accounts_n": 2.0, "account_idx": 1.0},
+	}
+	dump("07i_accounts", layoutDoc{Modules: []string{"quota"}}, multi, "zh")
+	masked := testSnap()
+	masked["pools"] = multi["pools"]
+	masked["display"] = map[string]any{"mask_accounts": true}
+	dump("07j_accounts_masked", layoutDoc{Modules: []string{"quota"}}, masked, "zh")
+	// 通用徽章（非 DeepSeek 供应商）
+	snapGen := testSnap()
+	snapGen["active_provider"] = "opencode-go"
+	snapGen["active_deepseek"] = false
+	snapGen["active_until"] = nowFn().Add(time.Hour).Unix()
+	{
+		c := newCanvas(screenW, screenH)
+		uiRender("main", snapGen, hist, c, 0, "zh", "12:34", animState{now: 0.6})
+		if err := os.WriteFile(filepath.Join(dir, "07k_provider_generic.png"), canvasPNG(c, 3), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

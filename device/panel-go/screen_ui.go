@@ -161,6 +161,14 @@ func snapF(m map[string]any, k string) (float64, bool) {
 	return 0, false
 }
 
+func snapI(m map[string]any, k string) int {
+	v, ok := snapF(m, k)
+	if !ok {
+		return 0
+	}
+	return int(v)
+}
+
 func snapS(m map[string]any, k string) string {
 	if v, ok := m[k]; ok {
 		if s, ok := v.(string); ok {

@@ -74,9 +74,9 @@ func m3Indeterminate(now float64) (float64, float64) {
 	return 270 + global + add, clamp01(sweep)
 }
 
-// drawM3Indeterminate：绕 (cx,cy)、半径 r 画不确定圆弧。
+// drawM3Indeterminate：绕 (cx,cy)、半径 r 画不确定圆弧（通用活动徽章）。
 // now<=0 时不画（静态场景不引入噪声，黄金样本可复现）。
-func drawM3Indeterminate(c *Canvas, cx, cy, r, thick int, color uint16, now float64) {
+func drawM3Indeterminate(c *Canvas, cx, cy, r, thick int, color uint16, now float64, alpha float64) {
 	if now <= 0 || r <= 1 || thick <= 0 {
 		return
 	}
@@ -86,7 +86,7 @@ func drawM3Indeterminate(c *Canvas, cx, cy, r, thick int, color uint16, now floa
 	}
 	a0 := start * math.Pi / 180
 	a1 := (start + 360*sweep) * math.Pi / 180
-	c.arc(cx, cy, r, a0, a1, color, thick)
+	c.arcA(cx, cy, r, a0, a1, color, thick, alpha)
 }
 
 // 页面切换

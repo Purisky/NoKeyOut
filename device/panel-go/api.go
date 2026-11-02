@@ -32,6 +32,11 @@ func (p *panel) route(w http.ResponseWriter, r *http.Request) {
 		p.screenPreview(w, r)
 		return
 	}
+	// 显示偏好：账号脱敏 + 时区（GET 读 / POST 写；Web 与小屏共用）
+	if path == "/api/display" {
+		p.displayHandler(w, r)
+		return
+	}
 	// USER 按键动作配置（GET 读 / POST 写；MASK 键不接管）
 	if path == "/api/user-button" {
 		p.userButtonHandler(w, r)

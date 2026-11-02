@@ -382,6 +382,18 @@
         <select id="scrusage" style="width:170px"></select>
       </div>
 
+      <!-- 显示设置：账号 ID 是否脱敏、时间轴时区（Web 与小屏共用） -->
+      <div class="row" style="margin-top:10px">
+        <span class="muted">账号 ID</span>
+        <label class="muted" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="dispmask"> 脱敏（显示序号）
+        </label>
+        <span class="muted">时区</span>
+        <select id="disptz" style="width:220px"></select>
+        <button class="act" id="dispsave">保存显示设置</button>
+        <span id="dispmsg" class="muted"></span>
+      </div>
+
       <!-- 配额自定义：列表里加「供应商 / 周期」，顺序即屏上顺序；空 = 自动 -->
       <div class="muted" style="margin-top:12px">配额自定义（空 = 自动：全部配额按剩余升序）</div>
       <div id="scrqlist"></div>
@@ -395,6 +407,10 @@
         <img id="scrprev" alt="" width="240" height="240"
              style="width:240px;height:240px;image-rendering:pixelated;
                     background:#000;border:1px solid var(--border,#8886);border-radius:8px">
+        <div class="row">
+          <button class="act" id="scrplay">▶ 预览调用动画</button>
+          <span id="scrplaymsg" class="muted"></span>
+        </div>
         <div id="scrprevmsg" class="muted"></div>
         <div class="muted" style="text-align:center">预览不保存、不写入设备配置</div>
       </div>
@@ -839,6 +855,55 @@ function renderKpis() {
     `<div class="dbkpi-value">${esc(val)}</div><div class="dbkpi-sub">${esc(sub)}</div></div>`).join('');
 }
 
+const PERIOD_SPAN = { today: 864e5, '7d': 7 * 864e5, '30d': 30 * 864e5 };
+const dispZone = () => DISP.tz || undefined;
+// 时区偏移：Intl 的 longOffset（GMT+08:00）；取不到就退回浏览器本地。
+function tzOffsetMs(ms) {
+  if (!DISP.tz) return -new Date(ms).getTimezoneOffset() * 60000;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: DISP.tz, timeZoneName: 'longOffset' })
+      .formatToParts(new Date(ms));
+    const name = (parts.find(p => p.type === 'timeZoneName') || {}).value || '';
+    const m = name.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+    if (!m) return 0;
+    return (m[1] === '-' ? -1 : 1) * ((+m[2]) * 3600 + (+(m[3] || 0)) * 60) * 1000;
+  } catch { return -new Date(ms).getTimezoneOffset() * 60000; }
+}
+const tzHour = ms => {
+  try { return new Intl.DateTimeFormat('en-GB', { timeZone: dispZone(), hour: '2-digit', hour12: false }).format(new Date(ms)); }
+  catch { return String(new Date(ms).getHours()).padStart(2, '0'); }
+};
+const tzDay = ms => {
+  try { return new Intl.DateTimeFormat('en-GB', { timeZone: dispZone(), day: 'numeric' }).format(new Date(ms)); }
+  catch { return String(new Date(ms).getDate()); }
+};
+const tzFull = ms => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: dispZone(), month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
+  } catch { return new Date(ms).toLocaleString(); }
+};
+// 刻度与标签：today 每小时一格、每 6 小时一个标签；7d 每天一格一签；30d 每天一格、每 7 天一个标签。
+function axisAt(start, end, period) {
+  const step = period === 'today' ? 36e5 : 864e5;
+  const every = period === 'today' ? 6 : (period === '30d' ? 7 : 1);
+  const ticks = [], labels = [];
+  let off = tzOffsetMs(start);
+  let t = Math.ceil((start + off) / step) * step - off;
+  let i = 0;
+  for (; t < end; t += step, i++) {
+    ticks.push(t);
+    if (period !== 'today' && i % every !== 0) continue;
+    if (period === 'today') continue;
+    labels.push(t);
+  }
+  if (period === 'today') {
+    off = tzOffsetMs(start);
+    const six = 6 * 36e5;
+    for (let u = Math.ceil((start + off) / six) * six - off; u < end; u += six) labels.push(u);
+  }
+  return { ticks, labels };
+}
 function renderChart() {
   const el = $('#dbchart'), sum = $('#dbchartsum');
   if (!el) return;
@@ -849,57 +914,65 @@ function renderChart() {
   }
   const v = dbUsage();
   const raw = Array.isArray(v.buckets) ? v.buckets : [];
-  const data = raw.map(b => ({ label: String((b && b.label) || ''), tokens: Number(b && b.tokens) || 0 }));
-  const total = data.reduce((a, b) => a + b.tokens, 0) || Number(v.tokens) || 0;
-  if (total > 0 && (!data.length || !data.some(d => d.tokens > 0))) {
-    data.length = 0;
-    data.push({ label: '', tokens: total });
+  const span = PERIOD_SPAN[DB.period] || PERIOD_SPAN.today;
+  const now = Date.now();
+  const start = now - span, end = now;
+  const colMs = (Number(v.col_seconds) || 0) * 1000 || span / Math.max(1, raw.length) ;
+  let buckets = raw.map(b => ({ ts: (Number(b && b.ts) || 0) * 1000, tokens: Number(b && b.tokens) || 0 }))
+    .filter(b => b.ts > 0);
+  if (!buckets.length && raw.length) {
+    const since = Date.parse(v.since || '') || (start + span - raw.length * colMs);
+    buckets = raw.map((b, i) => ({ ts: since + i * colMs, tokens: Number(b && b.tokens) || 0 }));
   }
+  const total = buckets.reduce((a, b) => a + b.tokens, 0) || Number(v.tokens) || 0;
   if (sum) {
-    // 只报分布（峰值/均值），总量与调用数已在 KPI 卡片里，不重复。
-    sum.textContent = raw.length > 1
-      ? `${NK.t('峰值')} ${fmtN(Math.max(...data.map(d => d.tokens), 0))} tokens · ` +
-        `${NK.t('平均')} ${fmtN(total / data.length)}`
+    sum.textContent = buckets.length > 1
+      ? `${NK.t('峰值')} ${fmtN(Math.max(...buckets.map(d => d.tokens), 0))} tokens · ` +
+        `${NK.t('平均')} ${fmtN(total / buckets.length)}`
       : '';
   }
-  if (!data.length) {
+  if (!buckets.length) {
     el.innerHTML = `<div class="dbempty">${NK.t('暂无趋势数据')}</div>`;
     return;
   }
   const W = 900, H = 180, L = 12, R = 12, T = 14, B = 26;
-  const n = data.length, max = Math.max(...data.map(d => d.tokens), 1);
-  const step = (W - L - R) / n, bw = Math.max(1, Math.min(step * 0.72, 26));
-  const yOf = val => T + (H - T - B) * (1 - val / max);
+  const plotW = W - L - R, plotH = H - T - B;
+  const xOf = t => L + (t - start) / span * plotW;
+  const max = Math.max(...buckets.map(d => d.tokens), 1);
+  const yOf = val => T + plotH * (1 - val / max);
   const grid = [0, 0.5, 1].map(f => {
     const y = yOf(max * f);
     return `<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}" ` +
       `stroke="var(--border, #8884)" stroke-dasharray="${f ? '3 4' : ''}"/>` +
       `<text x="${L}" y="${(y - 3).toFixed(1)}" font-size="9" fill="var(--muted, #888)">${fmtN(max * f)}</text>`;
   }).join('');
-  const bars = data.map((d, i) => {
-    const h = (H - T - B) * (d.tokens / max), x = L + i * step + (step - bw) / 2, y = H - B - h;
-    const label = d.label ? d.label + ': ' : '';
-    return `<g><title>${esc(label + fmtN(d.tokens) + ' tokens')}</title>` +
-      `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" ` +
-      `rx="2" fill="var(--accent, #06c)" opacity=".85"/></g>`;
+  const newest = buckets.reduce((bi, b, i) => (b.ts > buckets[bi].ts ? i : bi), 0);
+  const bars = buckets.map((d, i) => {
+    const xa = Math.max(L, xOf(d.ts)), xb = Math.min(W - R, xOf(d.ts + colMs));
+    if (xb <= L || xa >= W - R || xb <= xa) return '';
+    const h = plotH * (d.tokens / max);
+    const y = T + plotH - h;
+    const x = xa, w = Math.max(1, xb - xa);
+    return `<g><title>${esc(tzFull(d.ts) + ' · ' + fmtN(d.tokens) + ' tokens')}</title>` +
+      `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" ` +
+      `rx="1" fill="var(--accent, #06c)" opacity="${i === newest ? '.95' : '.7'}"/></g>`;
   }).join('');
-  const idx = n <= 4 ? data.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
-  const short = s => {
-    s = String(s || '');
-    if (s.length <= 12) return s;
-    const m = s.match(/[T ](\d{2}:\d{2})/);
-    return m ? m[1] : s.slice(-5);
-  };
-  const labels = idx.map(i => {
-    const d = data[i];
-    if (!d || !d.label) return '';
-    const x = L + (i + 0.5) * step;
-    const anchor = n === 1 ? 'middle' : (i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle'));
+  const { ticks, labels } = axisAt(start, end, DB.period);
+  const tickLines = ticks.map(t => {
+    const x = xOf(t);
+    return `<line x1="${x.toFixed(1)}" y1="${(H - B).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H - B + 3).toFixed(1)}" ` +
+      `stroke="var(--border, #8884)"/>`;
+  }).join('');
+  const labelText = labels.map(t => {
+    const x = xOf(t);
+    if (x < L || x > W - R) return '';
+    const txt = DB.period === 'today' ? tzHour(t) : tzDay(t);
+    const anchor = x <= L + 2 ? 'start' : (x >= W - R - 2 ? 'end' : 'middle');
     return `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}" font-size="10" ` +
-      `fill="var(--muted, #888)">${esc(short(d.label))}</text>`;
+      `fill="var(--muted, #888)">${esc(txt)}</text>`;
   }).join('');
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(NK.t('用量趋势'))}">` +
-    `<title>${esc(NK.t('用量趋势'))}</title>${grid}${bars}${labels}</svg>`;
+    `<title>${esc(NK.t('用量趋势'))}</title>${grid}${tickLines}${bars}${labelText}</svg>`;
 }
 
 function renderPools() {
@@ -915,7 +988,7 @@ function renderPools() {
   for (const p of pools) {
     const key = [p.provider || '', p.account || '', p.name || ''].join('|');
     if (!groups.has(key)) groups.set(key, {
-      name: p.name || p.provider || '?', kind: p.kind || '', account: p.account || '', items: [],
+      name: p.name || p.provider || '?', kind: p.kind || '', account: dispAcct(p), items: [],
     });
     groups.get(key).items.push(p);
   }
@@ -1358,6 +1431,52 @@ NK.I18N['% 屏高'] = '% of screen';
 
 const SCR = { budget: 0, avail: [], choices: [], periods: ['today'],
               mods: [], quotas: [], usage: 'today', compact: false, bad: true };
+
+// 显示偏好（账号脱敏 / 时区）：Web 与小屏共用一份，存设备端。
+const DISP = { mask: false, tz: '', zones: [] };
+const dispAcct = p => {
+  if (!p || !p.account || !(Number(p.accounts_n) > 1)) return '';
+  return DISP.mask && p.account_idx ? '#' + p.account_idx : p.account;
+};
+function dispRender() {
+  const sel = $('#disptz'), msk = $('#dispmask');
+  if (msk) msk.checked = !!DISP.mask;
+  if (sel) {
+    const opts = [`<option value="">${esc(NK.t('跟随系统'))}</option>`].concat(
+      (DISP.zones || []).map(z => `<option value="${esc(z.id)}">${esc(z.label || z.id)}</option>`));
+    sel.innerHTML = opts.join('');
+    sel.value = DISP.tz || '';
+  }
+}
+async function dispLoad() {
+  try {
+    const j = await (await fetch('/api/display')).json();
+    DISP.mask = !!j.mask_accounts;
+    DISP.tz = j.timezone || '';
+    DISP.zones = j.zones || [];
+  } catch {}
+  dispRender();
+  renderPools();
+  renderChart();
+  scrQuotaList();
+}
+async function dispSave() {
+  const msg = $('#dispmsg');
+  try {
+    const r = await fetch('/api/display', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mask_accounts: !!$('#dispmask').checked, timezone: $('#disptz').value || '' }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || NK.t('保存失败'));
+    DISP.mask = !!j.mask_accounts;
+    DISP.tz = j.timezone || '';
+    if (msg) { msg.textContent = NK.t('已保存'); msg.style.color = 'var(--success, #30a46c)'; }
+    renderPools(); renderChart(); scrQuotaList();
+    if (typeof scrPrev === 'function') scrPrev();
+  } catch (e) {
+    if (msg) { msg.textContent = String(e.message || e); msg.style.color = 'var(--error, #e5484d)'; }
+  }
+}
 // 模块对象（只剩内置模块）
 const scrMod = id => SCR.avail.find(m => m.id === id) || null;
 const scrLabel = id => { const m = scrMod(id); return m && m.label ? (NK.lang === 'zh' ? m.label.zh : m.label.en) : id; };
@@ -1485,6 +1604,13 @@ setInterval(() => {
   const pane = document.querySelector('.tabpane[data-pane="screen"]');
   if (pane && pane.style.display !== 'none' && document.visibilityState === 'visible') scrChoicesRefresh();
 }, 10000);
+// 用量趋势是滚动窗口：每秒重绘一次，图表与刻度按像素连续左移。
+setInterval(() => {
+  const pane = document.querySelector('.tabpane[data-pane="home"]');
+  if (!DB.stats || document.visibilityState !== 'visible') return;
+  if (pane && pane.style.display === 'none') return;
+  renderChart();
+}, 1000);
 
 async function screenLoad() {
   const box = $('#scrrows');
@@ -1548,7 +1674,8 @@ function scrUsageRender() {
 
 function scrChoiceLabel(c) {
   let s = c.name || c.provider || '?';
-  if (c.account) s += ' · ' + c.account;
+  const acct = dispAcct(c);
+  if (acct) s += ' · ' + acct;
   if (c.window) s += ' · ' + quotaWindowLabel(c.window);
   else if (c.mode === 'balance') s += ' · ' + NK.t('余额');
   else if (c.error) s += ' · ' + NK.t('错误');
@@ -1622,6 +1749,9 @@ $('#scrqadd').onclick = async () => {
   scrPrev();
 };
 $('#scrusage').onchange = e => { SCR.usage = e.target.value; scrPrev(); };
+$('#dispsave').onclick = dispSave;
+$('#scrplay').onclick = scrPlay;
+dispLoad();
 $('#scrcmp').onchange = e => { SCR.compact = !!e.target.checked; screenUpdate(); scrPrev(); };
 
 // ---- 实时预览：POST /api/screen/preview（后端真实渲染器 + 实时数据）→ PNG
@@ -1632,8 +1762,71 @@ function scrPrevBody() {
   return { modules: scrPicked(), quotas: SCR.quotas || [], usage: SCR.usage || 'today',
            compact: !!SCR.compact, scale: 2 };
 }
+// 调用动画预览：用真实渲染器逐帧生成（demo_provider + demo_now），再按 50ms 播放。
+const PLAY = { timer: null, urls: [], gen: 0 };
+function scrPlayStop() {
+  clearTimeout(PLAY.timer);
+  PLAY.timer = null;
+  PLAY.gen++;
+  PLAY.urls.forEach(u => URL.revokeObjectURL(u));
+  PLAY.urls = [];
+}
+async function scrPlay() {
+  const msg = $('#scrplaymsg');
+  const prov = (SCR.choices || []).find(c => /deepseek/i.test((c.provider || '') + ' ' + (c.name || '')));
+  if (!prov) {
+    if (msg) msg.textContent = NK.t('当前没有可播放官方动画的供应商（DeepSeek）');
+    return;
+  }
+  scrPlayStop();
+  const gen = PLAY.gen;
+  if (msg) msg.textContent = NK.t('生成动画帧…');
+  const base = scrPrevBody();
+  const frames = new Array(60);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= 60 || gen !== PLAY.gen) return;
+      const r = await fetch('/api/screen/preview', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, base, { demo_provider: prov.provider, demo_now: i * 0.05 })) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      frames[i] = URL.createObjectURL(await r.blob());
+    }
+  };
+  try {
+    await Promise.all([worker(), worker(), worker(), worker()]);
+  } catch (e) {
+    if (msg) msg.textContent = String((e && e.message) || e);
+    scrPlayStop();
+    return;
+  }
+  if (gen !== PLAY.gen) return;
+  PLAY.urls = frames;
+  const img = $('#scrprev');
+  if (msg) msg.textContent = NK.t('播放中…');
+  let i = 0, loops = 0;
+  const step = () => {
+    if (gen !== PLAY.gen) return;
+    img.src = frames[i++];
+    if (i >= frames.length) {
+      i = 0;
+      if (++loops >= 2) {
+        if (msg) msg.textContent = '';
+        scrPlayStop();
+        scrPrev();
+        return;
+      }
+    }
+    PLAY.timer = setTimeout(step, 50);
+  };
+  step();
+}
+
 // 任何编辑动作后 debounce ~300ms 再请求
 function scrPrev() {
+  scrPlayStop();
   clearTimeout(SEP.timer);
   SEP.timer = setTimeout(scrPrevNow, 300);
 }

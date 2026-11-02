@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -195,9 +196,12 @@ type stats struct {
 	quotaBusy atomic.Bool // 定时轮询与"供应商变更后立即刷新"不重叠
 
 	// 最近服务过的供应商与活动截止时间。
-	lastProvider string
-	lastTokens   int64
-	activeUntil  time.Time
+	lastProvider    string
+	lastTokens      int64
+	providerCalls   map[string]int64 // 今日各供应商累计调用数（无 models 时的回退）
+	modelCalls      map[string]int64 // 今日各模型累计调用数（2s 粒度归因）
+	activeDeepseek  bool             // 最近一次归因的模型是否 DeepSeek（徽章优先级）
+	activeUntil     time.Time
 }
 
 // providerActiveHold：活动指示保持时长。
@@ -262,69 +266,153 @@ func (s *stats) pollUsage() {
 			if view == nil {
 				continue
 			}
-			colDur, nCols := columnSpec(usagePeriodLen(per), screenW-16)
-			if per == "today" {
-				// 滚动 24h：窗口末端是当前时刻，不是本地 0 点。
-				since := now.Add(-usagePeriodLen(per))
-				win := s.hist.window(since, usagePeriodLen(per))
-				if win.tok > 0 {
-					fine := s.hist.series(since, usagePeriodLen(per), nCols)
-					view["since"] = since.Format(time.RFC3339)
-					view["tokens"] = win.tok
-					view["calls"] = win.calls
-					view["input"] = win.in
-					view["output"] = win.out
-					view["buckets"] = fineBuckets(fine)
-					view["buckets_src"] = "hist"
-					view["col_seconds"] = int64(colDur / time.Second)
-					continue
-				}
-			}
-			since, err := time.Parse(time.RFC3339, snapS(view, "since"))
-			if err != nil {
-				continue
-			}
-			fine := s.hist.series(since, usagePeriodLen(per), nCols)
-			if len(fine) == 0 {
-				continue
-			}
+			period := usagePeriodLen(per)
+			colDur, nCols := columnSpec(period, screenW-16)
+			since := now.Add(-period)
+			win := s.hist.window(since, period)
+			fine := s.hist.series(since, period, nCols)
 			sum := int64(0)
 			for _, n := range fine {
 				sum += n
 			}
 			total, _ := snapF(view, "tokens")
-			// 自检：自建桶明显少于 API 总量（停机缺口/刚启动）→ 退回 API 粗桶。
-			if total <= 0 || float64(sum) >= 0.9*total {
-				view["buckets"] = fineBuckets(fine)
+			// today 用滚动 24h（上游 today 从本地 0 点起，和模块标题不符）；
+			// 7d/30d 只有自建桶覆盖了至少 90% 的上游总量才采用，否则退回 API 粗桶。
+			useHist := len(fine) > 0 && ((per == "today" && win.tok > 0) ||
+				(per != "today" && sum > 0 && (total <= 0 || float64(sum) >= 0.9*total)))
+			if useHist {
+				view["since"] = since.Format(time.RFC3339)
+				view["buckets"] = timedBuckets(fine, since, colDur)
 				view["buckets_src"] = "hist"
 				view["col_seconds"] = int64(colDur / time.Second)
-			} else {
-				view["buckets_src"] = "api(partial-hist)"
+				if per == "today" {
+					view["tokens"] = win.tok
+					view["calls"] = win.calls
+					view["input"] = win.in
+					view["output"] = win.out
+				}
+				continue
 			}
+			view["buckets_src"] = "api"
+			if cs := apiBucketSeconds(view); cs > 0 {
+				view["col_seconds"] = cs
+			}
+		}
+	}
+	// 没有自建历史（或历史不足）时，仍然给客户端统一的列宽与来源标记。
+	for _, raw := range usage {
+		view, _ := raw.(map[string]any)
+		if view == nil {
+			continue
+		}
+		if _, ok := view["col_seconds"]; !ok {
+			if cs := apiBucketSeconds(view); cs > 0 {
+				view["col_seconds"] = cs
+			}
+		}
+		if _, ok := view["buckets_src"]; !ok {
+			view["buckets_src"] = "api"
 		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if today != nil {
 		s.cur = today
-		// 今日 tokens 增长 = 刚刚又发生了一次调用。用 magpie 的“最近服务供应商”
-		// 归因，点亮该行图标 providerActiveHold；没有新调用则到期自动熄灭。
-		var tok int64
-		if tt, ok := today["tokens_today"].(map[string]any); ok {
-			in, _ := tt["input"].(int64)
-			out, _ := tt["output"].(int64)
-			tok = in + out
+		// 模型级的调用增量是 2s 粒度：比配额轮询里的 lastServedAt（30s 一拍）更贴近
+		// “正在调用”。只要有 DeepSeek 模型在涨，就优先归因给它（徽章最高优先级）。
+		viewToday, _ := usage["today"].(map[string]any)
+		if viewToday == nil {
+			viewToday = map[string]any{}
 		}
-		if s.lastTokens > 0 && tok > s.lastTokens && s.lastProvider != "" {
+		mcur, mprov, mdeep := modelAttribution(s.modelCalls, viewToday)
+		pcur, pbest := providerCallDeltas(s.providerCalls, viewToday)
+		switch {
+		case mprov != "":
+			s.lastProvider = mprov
+			s.activeDeepseek = mdeep
 			s.activeUntil = now.Add(providerActiveHold)
+		case pbest != "":
+			s.lastProvider = pbest
+			s.activeDeepseek = false
+			s.activeUntil = now.Add(providerActiveHold)
+		case len(mcur) == 0 && len(pcur) == 0:
+			// 老版本 magpie 没有 providerKeys：退回 tokens 增量 + 配额里的最近服务供应商。
+			var tok int64
+			if tt, ok := today["tokens_today"].(map[string]any); ok {
+				in, _ := tt["input"].(int64)
+				out, _ := tt["output"].(int64)
+				tok = in + out
+			}
+			if s.lastTokens > 0 && tok > s.lastTokens && s.lastProvider != "" {
+				s.activeUntil = now.Add(providerActiveHold)
+			}
+			s.lastTokens = tok
 		}
-		s.lastTokens = tok
+		s.modelCalls = mcur
+		s.providerCalls = pcur
 	}
 	if len(usage) > 0 {
 		s.usage = usage
 	}
 	s.ts = now
 	s.err = ""
+}
+
+// modelAttribution：今日各模型累计调用数 → (当前值, 增量归属的供应商, 是否 DeepSeek)。
+// DeepSeek 模型的任何增长都压过其它模型（需求：DeepSeek 动画优先级最高）。
+func modelAttribution(prev map[string]int64, today map[string]any) (map[string]int64, string, bool) {
+	arr, _ := today["models"].([]any)
+	cur := make(map[string]int64, len(arr))
+	bestProv, deepProv := "", ""
+	bestD, deepD := int64(0), int64(0)
+	for _, raw := range arr {
+		m, _ := raw.(map[string]any)
+		id := snapS(m, "id")
+		if id == "" {
+			continue
+		}
+		c := i64(m["calls"])
+		cur[id] = c
+		p, ok := prev[id]
+		if !ok || c <= p {
+			continue
+		}
+		d := c - p
+		prov := snapS(m, "provider")
+		if strings.Contains(strings.ToLower(id+" "+snapS(m, "model")), "deepseek") {
+			if d > deepD {
+				deepD, deepProv = d, prov
+			}
+		} else if d > bestD {
+			bestD, bestProv = d, prov
+		}
+	}
+	if deepD > 0 {
+		return cur, deepProv, true
+	}
+	if bestD > 0 {
+		return cur, bestProv, false
+	}
+	return cur, "", false
+}
+
+// providerCallDeltas：今日各供应商累计调用数 → (当前值, 增量最大的供应商)。
+// 只认 call 增长；跨零点清零时不会误报。
+func providerCallDeltas(prev map[string]int64, today map[string]any) (map[string]int64, string) {
+	provs, _ := today["providers"].(map[string]any)
+	cur := make(map[string]int64, len(provs))
+	best, bestD := "", int64(0)
+	for name, raw := range provs {
+		m, _ := raw.(map[string]any)
+		c := i64(m["calls"])
+		cur[name] = c
+		if p, ok := prev[name]; ok && c > p {
+			if d := c - p; d > bestD {
+				best, bestD = name, d
+			}
+		}
+	}
+	return cur, best
 }
 
 // bucketVals：快照里的分桶 → 数值切片（播种用）。
@@ -340,13 +428,40 @@ func bucketVals(v map[string]any) []float64 {
 	return out
 }
 
-// fineBuckets：[]int64 → 渲染层吃的那种 [{label,tokens}]（label 在这条路径上没意义）。
-func fineBuckets(v []int64) []any {
+// timedBuckets：自建桶 → [{label,tokens,ts}]。ts 是桶起点（Unix 秒），
+// 渲染层按像素取样时用它定位，不再依赖轮询时刻的 since。
+func timedBuckets(v []int64, since time.Time, col time.Duration) []any {
 	out := make([]any, 0, len(v))
-	for _, n := range v {
-		out = append(out, map[string]any{"label": "", "tokens": n})
+	for i, n := range v {
+		out = append(out, map[string]any{
+			"label": "", "tokens": n,
+			"ts": since.Add(time.Duration(i) * col).Unix(),
+		})
 	}
 	return out
+}
+
+// apiBucketSeconds：上游粗桶的列宽（相邻桶时间差的中位数）；缺时间戳返回 0。
+func apiBucketSeconds(view map[string]any) int64 {
+	arr, _ := view["buckets"].([]any)
+	var prev int64
+	diffs := make([]int64, 0, len(arr))
+	for _, raw := range arr {
+		m, _ := raw.(map[string]any)
+		ts, ok := snapF(m, "ts")
+		if !ok || ts <= 0 {
+			continue
+		}
+		if prev > 0 && int64(ts) > prev {
+			diffs = append(diffs, int64(ts)-prev)
+		}
+		prev = int64(ts)
+	}
+	if len(diffs) == 0 {
+		return 0
+	}
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i] < diffs[j] })
+	return diffs[len(diffs)/2]
 }
 
 // useView：上游 usage → 屏上周期视图。
@@ -360,9 +475,40 @@ func useView(u map[string]any) map[string]any {
 			m, _ := raw.(map[string]any)
 			in, _ := toF(m["input"])
 			out, _ := toF(m["output"])
-			buckets = append(buckets, map[string]any{
+			b := map[string]any{
 				"label":  snapS(m, "label"),
 				"tokens": int64(in + out),
+			}
+			if t, err := time.Parse(time.RFC3339, snapS(m, "time")); err == nil {
+				b["ts"] = t.Unix()
+			}
+			buckets = append(buckets, b)
+		}
+	}
+	provs := map[string]any{}
+	if arr, ok := u["providerKeys"].([]any); ok {
+		for _, raw := range arr {
+			m, _ := raw.(map[string]any)
+			p := snapS(m, "provider")
+			if p == "" {
+				continue
+			}
+			c, _ := toF(m["calls"])
+			provs[p] = map[string]any{"calls": int64(c)}
+		}
+	}
+	models := make([]any, 0, 8)
+	if arr, ok := u["models"].([]any); ok {
+		for _, raw := range arr {
+			m, _ := raw.(map[string]any)
+			id := snapS(m, "id")
+			if id == "" {
+				continue
+			}
+			c, _ := toF(m["calls"])
+			models = append(models, map[string]any{
+				"id": id, "provider": snapS(m, "provider"),
+				"model": snapS(m, "model"), "calls": int64(c),
 			})
 		}
 	}
@@ -381,7 +527,7 @@ func useView(u map[string]any) map[string]any {
 		"calls": int64(calls), "errors": int64(errs),
 		"input": int64(in), "output": int64(out), "cache_read": int64(cr),
 		"tokens": int64(in + out), "cost": cost, "cache_hit_pct": hit,
-		"buckets": buckets,
+		"buckets": buckets, "providers": provs, "models": models,
 	}
 }
 
@@ -563,8 +709,8 @@ func (s *stats) pollQuotas() {
 	sortPools(pools)
 	s.mu.Lock()
 	s.pools = poolsToAny(pools)
-	if newestProvider != "" {
-		s.lastProvider = newestProvider
+	if newestProvider != "" && s.lastProvider == "" {
+		s.lastProvider = newestProvider // 仅冷启动兜底；实时归因见 providerCallDeltas
 	}
 	s.mu.Unlock()
 }
@@ -581,12 +727,40 @@ func (s *stats) refreshQuotasSoon() {
 // poolsToAny：快照契约 []any（map 形式）。字段名与渲染层/用户 JSON 页约定一致。
 // used_pct 保留（用户页在用 pools[0].used_pct）。
 func poolsToAny(ps []Pool) []any {
+	// 账号号：同一供应商的账号按字典序编号，跨轮询稳定；渲染层据此决定
+	// 是否显示账号（只有 >1 个账号才显示）以及脱敏时显示 #N。
+	accts := map[string]map[string]struct{}{}
+	for _, p := range ps {
+		if p.Account == "" {
+			continue
+		}
+		if accts[p.Provider] == nil {
+			accts[p.Provider] = map[string]struct{}{}
+		}
+		accts[p.Provider][p.Account] = struct{}{}
+	}
+	idx := make(map[string]map[string]int, len(accts))
+	for prov, set := range accts {
+		names := make([]string, 0, len(set))
+		for name := range set {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		idx[prov] = make(map[string]int, len(names))
+		for i, name := range names {
+			idx[prov][name] = i + 1
+		}
+	}
 	out := make([]any, 0, len(ps))
 	for _, p := range ps {
 		m := map[string]any{
 			"name": p.Name, "provider": p.Provider, "window": p.Window, "kind": p.Kind,
 			"account": p.Account,
 			"state":   int(p.State), "has_val": p.HasVal, "has_reset": p.HasReset,
+		}
+		if p.Account != "" {
+			m["accounts_n"] = len(accts[p.Provider])
+			m["account_idx"] = idx[p.Provider][p.Account]
 		}
 		if p.HasVal {
 			m["used_pct"] = round1(p.UsedPct)
@@ -657,10 +831,16 @@ func (s *stats) snapshot() map[string]any {
 	if ip := lanIP(); ip != "" {
 		panelURL = fmt.Sprintf("https://%s:%d", ip, s.cfg.port)
 	}
+	disp := loadDisplayCfg()
 	return map[string]any{
 		"generated_at": time.Now().Unix(),
 		"switch":       sw,
 		"lang":         langGet(),
+		"display": map[string]any{
+			"mask_accounts": disp.MaskAccounts,
+			"timezone":      disp.Timezone,
+			"tz":            loadLocation(disp.Timezone).String(),
+		},
 		"net":          netmon.snapshot(),
 		"traffic":      s.cur,
 		"usage":        s.usage,
@@ -669,8 +849,9 @@ func (s *stats) snapshot() map[string]any {
 		"dash":         s.dashSnapLocked(),
 		"url":          panelURL,
 		"error":        s.err,
-		// 活动供应商：渲染层据此给该行图标加不确定进度指示器（M3）。
+		// 活动供应商：渲染层据此在图标右下角画徽章（DeepSeek 鲸鱼尾 / 通用指示）。
 		"active_provider": s.lastProvider,
+		"active_deepseek": s.activeDeepseek,
 		"active_until":    s.activeUntil.Unix(),
 	}
 }
@@ -740,6 +921,10 @@ func cacheHitPct(u map[string]any) float64 {
 
 func i64(v any) int64 {
 	switch t := v.(type) {
+	case int64:
+		return t
+	case int:
+		return int64(t)
 	case float64:
 		return int64(t)
 	case string:

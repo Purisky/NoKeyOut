@@ -13,6 +13,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"strings"
 	"log"
 	"net/http"
 	"time"
@@ -92,6 +93,7 @@ func quotaChoices(snap map[string]any) []map[string]any {
 		out = append(out, map[string]any{
 			"provider": snapS(m, "provider"), "window": snapS(m, "window"),
 			"account": snapS(m, "account"), "name": snapS(m, "name"),
+			"accounts_n": snapI(m, "accounts_n"), "account_idx": snapI(m, "account_idx"),
 			"mode": kind, "label": label, "error": snapS(m, "err") != "",
 		})
 	}
@@ -111,7 +113,9 @@ func (p *panel) screenPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		layoutDoc
-		Scale int `json:"scale"`
+		Scale        int     `json:"scale"`
+		DemoProvider string  `json:"demo_provider"`
+		DemoNow      float64 `json:"demo_now"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&body); err != nil {
 		p.errJSON(w, r, 400, "请求体不是合法 JSON")
@@ -129,8 +133,16 @@ func (p *panel) screenPreview(w http.ResponseWriter, r *http.Request) {
 	// 和真机 / 首页 WASM 同一个入口与同一份有效快照：锁定、断网、统计异常、模块栈全部一致。
 	snap := p.screenState()
 	snap["switch"] = "locked" // 预览的是版面配置；ADMIN 页与版面无关
+	anim := animState{}
+	if body.DemoProvider != "" {
+		// 动画预览：把该供应商强制置为"正在调用"，动画时钟由 demo_now 驱动。
+		snap["active_provider"] = body.DemoProvider
+		snap["active_deepseek"] = strings.Contains(strings.ToLower(body.DemoProvider), "deepseek")
+		snap["active_until"] = time.Now().Add(time.Hour).Unix()
+		anim.now = body.DemoNow
+	}
 	uiRenderWith("main", snap, hist, c, 0, screenctl.lang(snap),
-		time.Now().Format("15:04"), animState{}, body.layoutDoc)
+		time.Now().Format("15:04"), anim, body.layoutDoc)
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(canvasPNG(c, scale))

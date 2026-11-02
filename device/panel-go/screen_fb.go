@@ -204,6 +204,50 @@ func (c *Canvas) circle(cx, cy, r int, color uint16, fill bool) {
 	}
 }
 
+// blendPixel：按 alpha（0..1）把 color 混到 (x,y) 的现有像素上。
+func (c *Canvas) blendPixel(x, y int, color uint16, alpha float64) {
+	if alpha <= 0 || x < 0 || y < 0 || x >= c.W || y >= c.H {
+		return
+	}
+	if alpha >= 1 {
+		c.pixel(x, y, color)
+		return
+	}
+	off := (y*c.W + x) * 2
+	if off+1 >= len(c.Buf) {
+		return
+	}
+	bg := uint16(c.Buf[off])<<8 | uint16(c.Buf[off+1])
+	br, bgc, bb := rgb565expand(bg)
+	fr, fg, fb := rgb565expand(color)
+	mix := func(b, f uint8) int { return int(b) + int(float64(int(f)-int(b))*alpha) }
+	out := rgb565(uint8(mix(br, fr)), uint8(mix(bgc, fg)), uint8(mix(bb, fb)))
+	c.Buf[off] = byte(out >> 8)
+	c.Buf[off+1] = byte(out)
+}
+
+// arcA：带 alpha 的圆弧（通用活动徽章用，压在图标上时要半透明）。
+func (c *Canvas) arcA(cx, cy, r int, a0, a1 float64, color uint16, thick int, alpha float64) {
+	if r <= 0 || thick <= 0 {
+		return
+	}
+	steps := int(math.Abs(a1-a0) * float64(r) * 2)
+	if steps < 1 {
+		steps = 1
+	}
+	for i := range steps + 1 {
+		a := a0 + (a1-a0)*float64(i)/float64(steps)
+		for t := range thick {
+			rr := float64(r - t)
+			if rr <= 0 {
+				continue
+			}
+			c.blendPixel(int(math.Round(float64(cx)+rr*math.Cos(a))),
+				int(math.Round(float64(cy)+rr*math.Sin(a))), color, alpha)
+		}
+	}
+}
+
 func (c *Canvas) arc(cx, cy, r int, a0, a1 float64, color uint16, thick int) {
 	if r <= 0 || thick <= 0 {
 		return
@@ -245,6 +289,17 @@ func init() {
 // 4 级（0/25/50/100%）**真 alpha 合成**画到 (x,y)：out = bg + (fg-bg)*cov/255。
 // 要读回帧缓冲里的背景像素——所以背景是卡片色/渐变都正确（与固定底色近似不同）。
 func (c *Canvas) bitmapAA(x, y int, cov []byte, w, rb, rows int, color uint16) {
+	c.bitmapAAAlpha(x, y, cov, w, rb, rows, color, 1)
+}
+
+// bitmapAAAlpha：同 bitmapAA，但整体再乘一个 opacity（0..1），用于叠在图标上的半透明徽章。
+func (c *Canvas) bitmapAAAlpha(x, y int, cov []byte, w, rb, rows int, color uint16, opacity float64) {
+	if opacity <= 0 {
+		return
+	}
+	if opacity > 1 {
+		opacity = 1
+	}
 	fr, fgn, fb := exp5[(color>>11)&0x1F], exp6[(color>>5)&0x3F], exp5[color&0x1F]
 	blend := func(bgCh, fgCh, lev int) int {
 		return bgCh + (fgCh-bgCh)*lev/255
@@ -270,6 +325,9 @@ func (c *Canvas) bitmapAA(x, y int, cov []byte, w, rb, rows int, color uint16) {
 					continue
 				}
 				lev := int(lvl) * 85 // 1→85 2→170 3→255
+				if opacity < 1 {
+					lev = int(float64(lev) * opacity)
+				}
 				xx, yy := x+px, y+gy
 				if !inCanvas && (xx < 0 || yy < 0 || xx >= c.W || yy >= c.H) {
 					continue

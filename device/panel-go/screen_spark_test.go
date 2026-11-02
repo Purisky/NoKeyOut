@@ -59,11 +59,11 @@ func TestAxisLabelUsesLocalClock(t *testing.T) {
 		{18 * time.Hour, "12"},
 	}
 	for _, c := range cases {
-		if got := axisLabel(since.Add(c.d), "today"); got != c.want {
+		if got := axisLabelIn(since.Add(c.d), "today", loc); got != c.want {
 			t.Errorf("+%v → %q，want %q", c.d, got, c.want)
 		}
 	}
-	if got := axisLabel(since.AddDate(0, 0, 1), "7d"); got != "24" {
+	if got := axisLabelIn(since.AddDate(0, 0, 1), "7d", loc); got != "24" {
 		t.Errorf("7d 日号 = %q，want 24", got)
 	}
 }

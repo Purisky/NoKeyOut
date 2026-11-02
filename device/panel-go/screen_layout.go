@@ -14,7 +14,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,10 +158,12 @@ type quotaPick struct {
 
 // moduleCfg：随 layoutDoc 一起下发给每个模块渲染器的配置。
 type moduleCfg struct {
-	Quotas  []quotaPick
-	Usage   string
-	Compact bool    // 配额简易模式
-	Now     float64 // 动画时钟（秒）；0=静态
+	Quotas       []quotaPick
+	Usage        string
+	Compact      bool           // 配额简易模式
+	Now          float64        // 动画时钟（秒）；0=静态
+	MaskAccounts bool           // 账号 ID 脱敏（显示 #序号）
+	TZ           *time.Location // 时间轴时区；nil = 系统
 }
 
 // pickRows：按"配额自定义"列表挑行，顺序即屏上顺序；列表为空 = 自动（原样返回）。
@@ -348,7 +349,9 @@ func netProblem(snap map[string]any) string {
 // renderModulesWith：按**给定**布局把模块自顶向下堆叠（真机、WASM、预览共用）。
 // 配额模块在栈内共享行游标（quotaPlan）：详细/简易同屏时简易接续详细，不重复行。
 func renderModulesWith(doc layoutDoc, c *Canvas, t *Txt, snap map[string]any, hist *History, anim animState) {
-	cfg := moduleCfg{Quotas: doc.Quotas, Usage: doc.Usage, Compact: doc.Compact, Now: anim.now}
+	disp := displayFromSnap(snap)
+	cfg := moduleCfg{Quotas: doc.Quotas, Usage: doc.Usage, Compact: doc.Compact, Now: anim.now,
+		MaskAccounts: disp.MaskAccounts, TZ: loadLocation(disp.Timezone)}
 	heights, gaps := moduleHeights(doc, snap)
 	type slot struct {
 		id   string
@@ -537,10 +540,11 @@ func renderModuleQuota(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 	}
 	drawRow := func(dst *Canvas, ry, i int) {
 		active := providerActive(snap, snapS(rows[i], "provider"))
+		deep := active && snapB(snap, "active_deepseek")
 		if cfg.Compact {
-			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now)
+			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep)
 		} else {
-			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now)
+			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep)
 		}
 	}
 	// 装得下：**行高固定**（36px/20px 的设计单元，不随容器拉高），且**顶部对齐**
@@ -615,155 +619,16 @@ func renderModuleUsage(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 	if chartH < 6 {
 		chartH = 6
 	}
-	histBars(c, 8, y+42, screenW-16, chartH, bucketsOf(u))
-	colDur, nCols := columnSpec(usagePeriodLen(period), screenW-16)
-	// 轴的起点必须与柱子的起点一致：优先用上游的 since；缺了就从当前时刻回推一个周期
-	since, err := time.Parse(time.RFC3339, snapS(u, "since"))
-	if err != nil || since.IsZero() {
-		since = nowFn().Add(-usagePeriodLen(period))
+	periodLen := usagePeriodLen(period)
+	now := nowFn()
+	sinceT := now.Add(-periodLen)
+	colDur, _ := columnSpec(periodLen, screenW-16)
+	colSec := usageColSeconds(u)
+	if colSec <= 0 {
+		colSec = int64(colDur / time.Second)
 	}
-	drawTimeAxis(c, t, 8, y+42+chartH, screenW-16, since, usagePeriodLen(period), colDur, nCols, period)
+	pts := usagePoints(u, sinceT, time.Duration(colSec)*time.Second)
+	drawUsageChart(c, 8, y+42, screenW-16, chartH, pts, colSec, sinceT.Unix(), now.Unix())
+	drawTimeAxisTZ(c, 8, y+42+chartH, screenW-16, sinceT, now, period, cfg.TZ)
 }
 
-// drawTimeAxis：直方图下方的**时间轴**（刻度 + 少量标签）。
-//
-//	· today  → 每小时一个刻度（10 分钟/列时 = 每 6 列一格），每 6 小时一个标签（0/6/12/18）
-//	· 7d     → 每天一个刻度，**每天一个标签**（日号）
-//	· 30d    → 每天一个刻度，每 7 天一个标签（够宽、够读）
-//
-// 刻度画在基线下方 2px，标签再往下 11px（点阵字高度）。
-func drawTimeAxis(c *Canvas, t *Txt, x, yb, w int, since time.Time, period, colDur time.Duration, n int, per string) {
-	if period <= 0 || w <= 0 {
-		return
-	}
-	c.fillRect(x, yb, w, 1, screenBorder) // 基线
-	tickEvery, labelEvery := time.Hour, 6*time.Hour
-	switch per {
-	case "7d":
-		tickEvery, labelEvery = 24*time.Hour, 24*time.Hour
-	case "30d":
-		tickEvery, labelEvery = 24*time.Hour, 7*24*time.Hour
-	}
-	pos := func(d time.Duration) int { // 时间偏移 → 像素
-		px := x + int(float64(d)/float64(period)*float64(w))
-		if px < x {
-			px = x
-		}
-		if px > x+w-1 {
-			px = x + w - 1
-		}
-		return px
-	}
-	// 刻度从**本地整点/零点**起算（滚动窗口的起点通常不是整点）。
-	align := since
-	switch per {
-	case "today":
-		align = since.Truncate(time.Hour)
-		if align.Before(since) {
-			align = align.Add(time.Hour)
-		}
-	case "7d", "30d":
-		align = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
-		if align.Before(since) {
-			align = align.AddDate(0, 0, 1)
-		}
-	}
-	for d := align.Sub(since); d < period; d += tickEvery {
-		px := pos(d)
-		c.fillRect(px, yb+1, 1, 2, screenBorder)
-	}
-	labelStart := align
-	if per == "today" {
-		// 标签落在本地 0/6/12/18 点，而不是“恰好 6 小时之后”。
-		labelStart = time.Date(align.Year(), align.Month(), align.Day(), align.Hour()/6*6, 0, 0, 0, align.Location())
-		if labelStart.Before(since) {
-			labelStart = labelStart.Add(6 * time.Hour)
-		}
-	}
-	for d := labelStart.Sub(since); d < period-1; d += labelEvery {
-		lbl := axisLabel(since.Add(d), per)
-		tw := SM.width(lbl)
-		lx := pos(d) - tw/2
-		if lx < x {
-			lx = x
-		}
-		if lx+tw > x+w {
-			lx = x + w - tw
-		}
-		SM.draw(c, lx, yb+4, lbl, screenMuted)
-	}
-}
-
-// axisLabel：轴上的文字。today 用本地时钟（18/00/06/12），其余用日号。
-func axisLabel(at time.Time, per string) string {
-	if per == "today" {
-		return at.Format("15")
-	}
-	return strconv.Itoa(at.Day())
-}
-
-// bucketsOf：快照里的分桶 → 数值序列（按上游顺序，不重排）。
-func bucketsOf(u map[string]any) []float64 {
-	arr, _ := u["buckets"].([]any)
-	out := make([]float64, 0, len(arr))
-	for _, raw := range arr {
-		m, _ := raw.(map[string]any)
-		if v, ok := snapF(m, "tokens"); ok {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-// histBars：把上游的桶按**时间**铺满整条宽度——1px = 周期 / 宽度。
-//
-// 上游最细只有两档：today 按小时（24 桶）、7d/30d 按天（7/30 桶），没有更细的序列
-// 而是**每 1px 一列**：该像素覆盖的时间片中点落在哪个桶，就用那个桶的值。
-// 结果是一张台阶状剖面（柱宽 = 宽度/桶数，today ≈ 9px、30d ≈ 7px），**柱间不留空隙**——
-// 留空隙会让 0 值桶变成 1px 碎屑，反而更花。
-func histBars(c *Canvas, x, y, w, h int, vs []float64) {
-	n := len(vs)
-	if n == 0 || h < 4 || w < 8 {
-		return
-	}
-	// 宽度比桶数还窄：先并桶（求平均），保证每列都有值
-	if n > w {
-		agg := make([]float64, w)
-		for i := 0; i < w; i++ {
-			lo, hi := i*n/w, (i+1)*n/w
-			if hi <= lo {
-				hi = lo + 1
-			}
-			sum := 0.0
-			for k := lo; k < hi; k++ {
-				sum += vs[k]
-			}
-			agg[i] = sum / float64(hi-lo)
-		}
-		vs, n = agg, w
-	}
-	mx := 0.0
-	for _, v := range vs {
-		if v > mx {
-			mx = v
-		}
-	}
-	for i := 0; i < w; i++ {
-		bi := int((float64(i) + 0.5) * float64(n) / float64(w))
-		if bi >= n {
-			bi = n - 1
-		}
-		bh := 1 // 0 值也留 1px 基线：看得出"这段没用量"
-		if mx > 0 && vs[bi] > 0 {
-			bh = int(float64(h) * vs[bi] / mx)
-			if bh < 1 {
-				bh = 1
-			}
-		}
-		col := screenAccentDim
-		if bi == n-1 { // 当前桶（当前小时 / 今天）高亮
-			col = screenAccent
-		}
-		c.fillRect(x+i, y+h-bh, 1, bh, col)
-	}
-}
