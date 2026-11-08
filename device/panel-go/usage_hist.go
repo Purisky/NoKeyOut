@@ -59,6 +59,8 @@ type usageHist struct {
 	logPath   string
 	logOffset int64
 	peakReady bool
+
+	errs errorRing // 最近调用错误（含分类），由同一条流水 tail 收集
 }
 
 func newUsageHist(path string) *usageHist {
@@ -280,6 +282,15 @@ type usageLogRow struct {
 	Model    string  `json:"model"`
 	Req      string  `json:"req"`
 	Served   string  `json:"served"`
+	Agent    string  `json:"agent"`
+	Caller   string  `json:"callerKeyName"`
+	EP       string  `json:"ep"`
+	Kind     string  `json:"kind"`
+	Source   string  `json:"source"`
+	Status   int     `json:"status"`
+	Err      string  `json:"err"`
+	ErrType  string  `json:"err_type"`
+	Rejected bool    `json:"rejected"`
 }
 
 func parseUsageRow(line []byte) (usageLogRow, time.Time, bool) {
@@ -288,7 +299,7 @@ func parseUsageRow(line []byte) (usageLogRow, time.Time, bool) {
 		return row, time.Time{}, false
 	}
 	ts, err := time.Parse(time.RFC3339Nano, row.T)
-	if err != nil || row.In+row.Out <= 0 {
+	if err != nil {
 		return row, time.Time{}, false
 	}
 	return row, ts, true
@@ -341,9 +352,14 @@ func (h *usageHist) rebuildPeak() {
 	}
 	peaks := make(map[int64]int64)
 	cut := time.Now().Add(-histKeepDays * 24 * time.Hour)
+	h.errs.reset()
 	for _, line := range bytesSplitLines(complete) {
 		row, ts, ok := parseUsageRow(line)
-		if !ok || ts.Before(cut) {
+		if !ok {
+			continue
+		}
+		h.errs.add(row, ts)
+		if ts.Before(cut) {
 			continue
 		}
 		if tok := usagePeakTokens(row, ts); tok > 0 {
@@ -419,6 +435,7 @@ func (h *usageHist) syncPeak() {
 		if !ok {
 			continue
 		}
+		h.errs.add(row, ts)
 		tok := usagePeakTokens(row, ts)
 		if tok <= 0 {
 			continue

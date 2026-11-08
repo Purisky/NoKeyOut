@@ -42,6 +42,11 @@ func (p *panel) route(w http.ResponseWriter, r *http.Request) {
 		p.userButtonHandler(w, r)
 		return
 	}
+	// 调用错误：最近流水中的错误 + 分类（GET；管理面过滤/浏览）
+	if path == "/api/errors" {
+		p.errorsHandler(w, r)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		p.routeGET(w, r)

@@ -163,6 +163,20 @@
            gap: 10px 18px; }
   .dbsys .k { font-size: 11px; color: var(--muted, #888); }
   .dbsys .v { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  .errlist { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .erritem { border: 1px solid var(--border, #8883); border-radius: 8px; padding: 10px 12px;
+             background: var(--surface, #8881); }
+  .errhead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .errbadge { font-size: 11px; border-radius: 999px; padding: 2px 8px; background: var(--surface, #8882);
+              color: var(--muted, #888); white-space: nowrap; }
+  .errbadge.quota, .errbadge.limit, .errbadge.subscription {
+    color: var(--warning, #d97706); background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent); }
+  .errbadge.auth, .errbadge.config {
+    color: var(--error, #e5484d); background: color-mix(in srgb, var(--error, #e5484d) 10%, transparent); }
+  .errbadge.upstream, .errbadge.network, .errbadge.model, .errbadge.request {
+    color: var(--accent, #06c); background: color-mix(in srgb, var(--accent, #06c) 10%, transparent); }
+  .errmeta { font-size: 12px; color: var(--muted, #888); word-break: break-word; }
+  .errmsg { margin-top: 6px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
   .dbsys .v code { font-size: 11px; }
   .dbnerr { border: 1px solid var(--error, #e5484d88); background: #e5484d18;
             background: color-mix(in srgb, var(--error, #e5484d) 10%, transparent);
@@ -198,6 +212,7 @@
   <span class="spacer"></span>
   <nav>
     <button data-tab="home" class="on">主页</button>
+    <button data-tab="errors">调用错误</button>
     <button data-tab="models">模型配置</button>
     <button data-tab="magpie">magpie</button>
     <button data-tab="screen">屏幕</button>
@@ -254,6 +269,27 @@
         <span class="spacer"></span>
       </div>
       <div id="dbsys" class="dbsys"></div>
+    </section>
+  </div>
+
+  <!-- 调用错误：按类型分类；默认隐藏配额/限流/订阅/取消 -->
+  <div class="tabpane" data-pane="errors" style="display:none">
+    <section class="panel">
+      <div class="dbchart-head">
+        <h2>调用错误</h2>
+        <span class="spacer"></span>
+        <span id="errsum" class="muted"></span>
+        <button class="act" id="errrefresh" type="button">刷新</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label class="muted" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="errnoisy" checked> 隐藏配额/限流/订阅/取消
+        </label>
+        <span class="muted">类型</span>
+        <select id="errcat" style="width:190px"><option value="">全部类型</option></select>
+        <span class="muted">最近 500 条；消息来自 magpie 逐请求流水</span>
+      </div>
+      <div id="errlist" class="errlist"></div>
     </section>
   </div>
 
@@ -487,6 +523,16 @@ NK.I18N = {
   "近 7 天调用": "7-day calls", "近 30 天调用": "30-day calls",
   "用量趋势": "Usage trend", "峰值": "Peak", "平均": "Avg",
   "其他": "Other", "DeepSeek 峰价": "DeepSeek peak",
+  "调用错误": "Call errors", "全部类型": "All types", "类型": "Type",
+  "隐藏配额/限流/订阅/取消": "Hide quota / rate-limit / subscription / canceled",
+  "配额/限流/订阅/取消": "quota / rate-limit / subscription / canceled",
+  "共": "total", "显示": "shown", "已隐藏": "hidden",
+  "暂无调用错误": "No call errors", "获取失败": "load failed",
+  "代理": "agent", "调用方": "caller", "端点": "endpoint", "网关拒绝": "gateway rejected",
+  "配额不足": "Quota", "限流": "Rate limit", "订阅/到期": "Subscription",
+  "认证/权限": "Auth", "配置": "Config", "模型": "Model", "上游 5xx": "Upstream 5xx",
+  "网络": "Network", "请求参数": "Request", "已取消": "Canceled",
+  "最近 500 条；消息来自 magpie 逐请求流水": "Latest 500; messages come from magpie's request log",
   "DeepSeek 峰价红色提醒（动画 + 用量图）": "DeepSeek peak red alert (animation + usage chart)",
   "仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计；关闭后动画和用量图都不显示红色。": "DeepSeek calls only; weekends and Chinese public holidays count as off-peak. Turning this off hides all red in the animation and usage chart.",
   "输入": "Input", "输出": "Output", "缓存读": "Cache reads",
@@ -1100,6 +1146,97 @@ function renderSys() {
     `<div><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join('');
 }
 
+// ---- 调用错误：按类型分类；默认隐藏配额/限流/订阅/取消
+const ERR_CATS = [
+  ['quota', '配额不足'], ['limit', '限流'], ['subscription', '订阅/到期'],
+  ['auth', '认证/权限'], ['config', '配置'], ['model', '模型'],
+  ['upstream', '上游 5xx'], ['network', '网络'], ['request', '请求参数'],
+  ['canceled', '已取消'], ['other', '其他'],
+];
+const ERR_LABEL = Object.fromEntries(ERR_CATS);
+const ERR_NOISY = new Set(['quota', 'limit', 'subscription', 'canceled']);
+const ERR = { items: [], err: null };
+
+function errCategoryOptions() {
+  const sel = $('#errcat'); if (!sel) return;
+  const cur = sel.value;
+  const counts = {};
+  for (const e of ERR.items) counts[e.category] = (counts[e.category] || 0) + 1;
+  const opts = [`<option value="">${esc(NK.t('全部类型'))}</option>`].concat(
+    ERR_CATS.map(([id, label]) => {
+      const n = counts[id] || 0;
+      return `<option value="${id}">${esc(NK.t(label))}${n ? ` (${n})` : ''}</option>`;
+    }));
+  sel.innerHTML = opts.join('');
+  if (cur) sel.value = cur;
+}
+
+function renderErrors() {
+  const el = $('#errlist'), sum = $('#errsum'); if (!el) return;
+  const hide = !!($('#errnoisy') && $('#errnoisy').checked);
+  const cat = ($('#errcat') && $('#errcat').value) || '';
+  const all = ERR.items || [];
+  const noisy = all.filter(e => ERR_NOISY.has(e.category));
+  const visible = all.filter(e => (!hide || !ERR_NOISY.has(e.category)) && (!cat || e.category === cat));
+  if (sum) {
+    const bits = [`${NK.t('共')} ${all.length}`, `${NK.t('显示')} ${visible.length}`];
+    if (hide && noisy.length) bits.push(`${NK.t('已隐藏')} ${noisy.length} ${NK.t('配额/限流/订阅/取消')}`);
+    if (cat) bits.push(`${NK.t('类型')}: ${NK.t(ERR_LABEL[cat] || cat)}`);
+    sum.textContent = bits.join(' · ');
+  }
+  if (ERR.err) {
+    el.innerHTML = `<div class="dbempty">${esc(NK.t('获取失败'))}: ${esc(ERR.err)}</div>`;
+    return;
+  }
+  if (!visible.length) {
+    el.innerHTML = `<div class="dbempty">${esc(NK.t('暂无调用错误'))}</div>`;
+    return;
+  }
+  el.innerHTML = visible.map(e => {
+    let t = e.time || '';
+    try { t = new Date(e.time).toLocaleString(); } catch {}
+    const catLabel = ERR_LABEL[e.category] || e.category || 'other';
+    const meta = [];
+    if (e.provider || e.model) meta.push(esc([e.provider, e.model].filter(Boolean).join(' / ')));
+    if (e.agent) meta.push(`${NK.t('代理')} ${esc(e.agent)}`);
+    if (e.caller) meta.push(`${NK.t('调用方')} ${esc(e.caller)}`);
+    if (e.endpoint) meta.push(`<code>${esc(e.endpoint)}</code>`);
+    return `<div class="erritem">` +
+      `<div class="errhead"><span class="errbadge ${esc(e.category || 'other')}">${esc(NK.t(catLabel))}</span>` +
+      (e.status ? `<span class="muted">HTTP ${e.status}</span>` : '') +
+      `<span class="muted">${esc(t)}</span>` +
+      (e.rejected ? `<span class="muted">${esc(NK.t('网关拒绝'))}</span>` : '') +
+      `</div>` +
+      (meta.length ? `<div class="errmeta">${meta.join(' · ')}</div>` : '') +
+      `<div class="errmsg">${esc(e.message || '')}</div>` +
+      `</div>`;
+  }).join('');
+}
+
+async function errorsLoad() {
+  try {
+    const j = await apiJSON('/api/errors?limit=500');
+    ERR.items = Array.isArray(j.errors) ? j.errors : [];
+    ERR.err = null;
+  } catch (e) {
+    ERR.err = String(e && e.message ? e.message : e);
+  }
+  errCategoryOptions();
+  renderErrors();
+}
+
+try {
+  if (localStorage.getItem('nk_err_hide_noisy') === '0') $('#errnoisy').checked = false;
+} catch {}
+$('#errrefresh').onclick = errorsLoad;
+$('#errnoisy').onchange = () => {
+  try { localStorage.setItem('nk_err_hide_noisy', $('#errnoisy').checked ? '1' : '0'); } catch {}
+  renderErrors();
+};
+$('#errcat').onchange = renderErrors;
+errorsLoad();
+setInterval(errorsLoad, 10000);
+
 // ---- 模型列表（原表格 + 全选）
 async function models() {
   const r = await fetch('/api/models');
@@ -1152,9 +1289,9 @@ function keysPaneVisible() {
   const p = document.querySelector('[data-pane="models"]');
   return !!p && p.style.display !== 'none';
 }
-window.addEventListener('focus', () => { status(); stats(); if (keysPaneVisible()) keyring(); });
+window.addEventListener('focus', () => { status(); stats(); errorsLoad(); if (keysPaneVisible()) keyring(); });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { status(); stats(); if (keysPaneVisible()) keyring(); }
+  if (!document.hidden) { status(); stats(); errorsLoad(); if (keysPaneVisible()) keyring(); }
 });
 NK.I18N['作用域 '] = 'scope ';
 NK.I18N['全部模型'] = 'all models';
