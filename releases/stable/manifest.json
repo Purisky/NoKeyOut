@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "version": "0.4.10",
+  "version": "0.4.11",
   "channel": "stable",
   "minVersion": "",
   "magpie": "0.1.3315",
-  "issuedAt": "2026-11-08T15:08:09Z",
-  "notes": "Panel: toggleable DeepSeek peak-price red alert; chart red covers only DeepSeek peak tokens.",
+  "issuedAt": "2026-11-08T15:30:47Z",
+  "notes": "Panel: dashboard traffic cache/session fix, 24h label, and DeepSeek peak log read access.",
   "assets": {
     "linux-arm64": {
-      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.10/nokeyout-0.4.10-linux-arm64.tar.gz",
-      "sha256": "08d90852af914165ddff0b2380e647dddb2c9c849b62850dade265d88917b7d8",
-      "size": 35467032
+      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.11/nokeyout-0.4.11-linux-arm64.tar.gz",
+      "sha256": "e9ea8099e62ec1acafa5a715e1c61da1173ef707628cad9ca7320af11275bd32",
+      "size": 35464922
     }
   }
 }
