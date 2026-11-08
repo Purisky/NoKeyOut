@@ -72,6 +72,28 @@ func TestChinaHolidaySet(t *testing.T) {
 	}
 }
 
+func TestIsPeakPricedProvider(t *testing.T) {
+	yes := []string{
+		"deepseek", "deepseek/deepseek-flash",
+		"opencode-go", "opencode-go/deepseek-v4.1-flash",
+		"commandcode", "command-code", "command_code", "commandcode.ai",
+	}
+	for _, p := range yes {
+		if !isPeakPricedProvider(p) {
+			t.Errorf("%q 应按峰谷计价", p)
+		}
+	}
+	no := []string{
+		"opendesign", "opendesign/deepseek-v4.1-flash",
+		"openai", "zhipu", "glm", "",
+	}
+	for _, p := range no {
+		if isPeakPricedProvider(p) {
+			t.Errorf("%q 不应按峰谷计价", p)
+		}
+	}
+}
+
 func TestMentionsDeepSeek(t *testing.T) {
 	cases := []struct {
 		parts []string

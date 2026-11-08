@@ -397,16 +397,26 @@ func quotaAccount(m map[string]any, mask bool) string {
 	return snapS(m, "account")
 }
 
-// drawQuotaRowDetailed：详细行（36px）——图标 32 ｜ 第一行：供应商名 ｜ 第二行：周期 + 值区（条/倒计时）。
+// drawQuotaRowDetailed：详细行（基准 36px）——图标 32 ｜ 第一行：供应商名 ｜ 第二行：周期 + 值区（条/倒计时）。
 // 内容 8px 边距（与其它模块同一网格）；行分隔线通栏（0..屏宽-1）。
 // inset = 右侧预留宽度（模块末尾的 "+N" 提示占位）。
 func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, mask bool, deep, deepPeak bool) {
-	c.fillRect(0, y, screenW, bandPoolH, screenBG)
+	drawQuotaRowDetailedAt(c, t, y, bandPoolH, first, m, inset, active, now, mask, deep, deepPeak)
+}
+
+// drawQuotaRowDetailedAt：按实际行高 rowH 居中绘制详细行（rowH >= bandPoolH）。
+// 模块拿到多余高度时，行高变大、内容垂直居中，避免在模块底部留一整块空白。
+func drawQuotaRowDetailedAt(c *Canvas, t *Txt, y, rowH int, first bool, m map[string]any, inset int, active bool, now float64, mask bool, deep, deepPeak bool) {
+	if rowH < bandPoolH {
+		rowH = bandPoolH
+	}
+	pad := (rowH - bandPoolH) / 2
+	c.fillRect(0, y, screenW, rowH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+2, iconDetailed, active, now, deep, deepPeak)
+	rowIcon(c, m, x, y+2+pad, iconDetailed, active, now, deep, deepPeak)
 
 	tx := x + iconDetailed + 6
 	name := snapS(m, "name")
@@ -417,27 +427,36 @@ func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any
 	if acc := quotaAccount(m, mask); acc != "" {
 		name += " · " + acc
 	}
-	drawMixed(c, tx, y+3, screenTrunc(name, screenW-8-tx-inset), screenFG, SM, CJKFont)
+	drawMixed(c, tx, y+3+pad, screenTrunc(name, screenW-8-tx-inset), screenFG, SM, CJKFont)
 
-	drawWindowLabel(c, tx, y+19, m)
+	drawWindowLabel(c, tx, y+19+pad, m)
 	sx := tx + labelSlotW()
 	// 条与 11px 文字盒（y+19..y+29）同一视觉中线：条顶 = 盒顶 + 2
-	drawQuotaValue(c, t, sx, y+19, y+21, screenW-8-inset, m)
+	drawQuotaValue(c, t, sx, y+19+pad, y+21+pad, screenW-8-inset, m)
 }
 
-// drawQuotaRowCompact：简易行（20px）——图标 + 周期 + 值区（条/倒计时），整行一条。
+// drawQuotaRowCompact：简易行（基准 20px）——图标 + 周期 + 值区（条/倒计时），整行一条。
 func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, _ bool, deep, deepPeak bool) {
-	c.fillRect(0, y, screenW, bandCompactH, screenBG)
+	drawQuotaRowCompactAt(c, t, y, bandCompactH, first, m, inset, active, now, deep, deepPeak)
+}
+
+// drawQuotaRowCompactAt：按实际行高 rowH 居中绘制简易行（rowH >= bandCompactH）。
+func drawQuotaRowCompactAt(c *Canvas, t *Txt, y, rowH int, first bool, m map[string]any, inset int, active bool, now float64, deep, deepPeak bool) {
+	if rowH < bandCompactH {
+		rowH = bandCompactH
+	}
+	pad := (rowH - bandCompactH) / 2
+	c.fillRect(0, y, screenW, rowH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+1, iconCompact, active, now, deep, deepPeak)
+	rowIcon(c, m, x, y+1+pad, iconCompact, active, now, deep, deepPeak)
 
 	bx := x + iconCompact + 6
-	drawWindowLabel(c, bx, y+4, m)
+	drawWindowLabel(c, bx, y+4+pad, m)
 	sx := bx + labelSlotW()
-	drawQuotaValue(c, t, sx, y+4, y+6, screenW-8-inset, m)
+	drawQuotaValue(c, t, sx, y+4+pad, y+6+pad, screenW-8-inset, m)
 }
 
 // shortWindow：窗口名 → 短写法："5 hours"→"5h"、"7 days"→"7d"、"Month"→"m"。

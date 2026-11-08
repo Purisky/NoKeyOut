@@ -337,7 +337,7 @@ func (s *stats) pollUsage() {
 		case mprov != "":
 			s.lastProvider = mprov
 			s.activeDeepseek = mdeep
-			s.activeDeepseekPeak = mdeep && isDeepSeekPeak(now)
+			s.activeDeepseekPeak = mdeep && isPeakPricedProvider(mprov) && isDeepSeekPeak(now)
 			s.activeUntil = now.Add(providerActiveHold)
 		case pbest != "":
 			s.lastProvider = pbest

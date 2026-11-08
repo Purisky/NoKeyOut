@@ -18,9 +18,9 @@ func TestValidateModules(t *testing.T) {
 		}
 	}
 	bad := map[string][]string{
-		"未知模块":   {"quota", "nope"},
-		"重复":     {"quota", "quota"},
-		"超过数量":   {"quota", "usage", "nope", "x"},
+		"未知模块": {"quota", "nope"},
+		"重复":   {"quota", "quota"},
+		"超过数量": {"quota", "usage", "nope", "x"},
 	}
 	for name, ids := range bad {
 		if err := validateLayout(layoutDoc{Modules: ids}); err == nil {
@@ -41,7 +41,7 @@ func TestLayoutStoreRoundTrip(t *testing.T) {
 	if got := s.current().Modules; len(got) != len(screenDefaultModules) {
 		t.Fatalf("文件不存在时应回落到默认布局，got %v", got)
 	}
-		if err := s.save(layoutDoc{Modules: []string{"quota_s", "usage"}}); err != nil {
+	if err := s.save(layoutDoc{Modules: []string{"quota_s", "usage"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.current(); len(got.Modules) != 2 || got.Modules[0] != "quota" || got.Modules[1] != "usage" || !got.Compact {
@@ -159,6 +159,35 @@ func TestRenderModulesKeepsSlots(t *testing.T) {
 
 func pxAt(c *Canvas, x, y int) uint16 {
 	return uint16(c.Buf[(y*screenW+x)*2])<<8 | uint16(c.Buf[(y*screenW+x)*2+1])
+}
+
+// 配额模块拿到大于自然高的槽高时，行高应被均分、内容居中，不能把多余高度丢在模块底部。
+func TestQuotaRowsFillSlot(t *testing.T) {
+	for _, compact := range []bool{false, true} {
+		n := 3
+		if compact {
+			n = 5
+		}
+		snap := manyPoolsSnap(n)
+		doc := layoutDoc{Modules: []string{"quota", "usage"}, Compact: compact}
+		h, _ := moduleHeights(doc, snap)
+		c := newCanvas(screenW, screenH)
+		c.clear(screenBG)
+		renderModuleQuota(c, newTxt("zh"), snap, newHistory(), 0, h[0], moduleCfg{Compact: compact})
+		last := -1
+		for y := 0; y < h[0]; y++ {
+			for x := 0; x < screenW; x++ {
+				if pxAt(c, x, y) != screenBG {
+					last = y
+					break
+				}
+			}
+		}
+		// 最后一行内容（品牌图标本身下沿有留白）应接近槽底；旧实现固定行高时这里会差 17px+。
+		if last < h[0]-13 {
+			t.Fatalf("compact=%v: 配额内容止于 y=%d，槽高 %d，底部留白 %dpx", compact, last, h[0], h[0]-1-last)
+		}
+	}
 }
 
 // 配额模块高度**跟着条数走**：加条数就长，去掉就缩；整屏始终铺满。

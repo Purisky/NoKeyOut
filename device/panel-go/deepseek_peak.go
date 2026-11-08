@@ -94,3 +94,24 @@ func mentionsDeepSeek(parts ...string) bool {
 	}
 	return false
 }
+
+// isPeakPricedProvider：该 provider 是否真的按 DeepSeek 官方峰谷价计费。
+//
+//	· DeepSeek 官方、OpenCode Go、Command Code 的 DeepSeek 模型：峰谷计价；
+//	· OpenDesign 订阅套餐：固定额度倍率（不是每日峰谷），不参与；
+//	· GLM 等其它模型：没有峰谷计价，不参与。
+//
+// provider 也可能是 "opencode-go/deepseek-v4.1-flash" 这类带前缀的 req。
+func isPeakPricedProvider(provider string) bool {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	switch {
+	case p == "deepseek" || strings.HasPrefix(p, "deepseek"):
+		return true
+	case strings.Contains(p, "opencode-go"):
+		return true
+	case strings.Contains(p, "commandcode") || strings.Contains(p, "command-code") || strings.Contains(p, "command_code"):
+		return true
+	default:
+		return false
+	}
+}

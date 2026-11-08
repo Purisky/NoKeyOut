@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -305,8 +306,19 @@ func parseUsageRow(line []byte) (usageLogRow, time.Time, bool) {
 	return row, ts, true
 }
 
+func providerPricedForDeepSeekPeak(row usageLogRow) bool {
+	p := row.Provider
+	if strings.TrimSpace(p) == "" {
+		p = row.Req
+	}
+	return isPeakPricedProvider(p)
+}
+
 func usagePeakTokens(row usageLogRow, ts time.Time) int64 {
 	if !mentionsDeepSeek(row.Provider, row.Model, row.Req, row.Served) {
+		return 0
+	}
+	if !providerPricedForDeepSeekPeak(row) {
 		return 0
 	}
 	if !isDeepSeekPeak(ts) {

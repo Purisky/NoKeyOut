@@ -46,23 +46,28 @@ func TestRebuildPeakFromJSONL(t *testing.T) {
 	offPeak := monday.Add(2*time.Hour + 30*time.Minute) // 12:30
 	saturday := monday.AddDate(0, 0, 5)                 // 周六 10:00
 	lines := []string{
-		fmt.Sprintf(`{"t":%q,"provider":"opendesign","model":"deepseek-v4.1-flash","in":10,"out":5}`, monday.Format(time.RFC3339)),
+		fmt.Sprintf(`{"t":%q,"provider":"opencode-go","model":"deepseek-v4.1-flash","in":10,"out":5}`, monday.Format(time.RFC3339)),
 		fmt.Sprintf(`{"t":%q,"provider":"openai","model":"gpt-6","in":9,"out":1}`, monday.Format(time.RFC3339)),
+		fmt.Sprintf(`{"t":%q,"provider":"opendesign","model":"deepseek-v4.1-flash","in":7,"out":3}`, monday.Add(time.Hour).Format(time.RFC3339)),
 		fmt.Sprintf(`{"t":%q,"provider":"opendesign","model":"deepseek-v4.1-flash","in":7,"out":3}`, offPeak.Format(time.RFC3339)),
 		fmt.Sprintf(`{"t":%q,"provider":"opencode-go","model":"deepseek-v4-flash","in":8,"out":2}`, saturday.Format(time.RFC3339)),
 	}
 	writeUsageLog(t, logPath, lines...)
 
 	peakSlot := monday.Unix() / histSlotSec
+	openSlot := monday.Add(time.Hour).Unix() / histSlotSec
 	offSlot := offPeak.Unix() / histSlotSec
 	satSlot := saturday.Unix() / histSlotSec
 	h := &usageHist{
 		path:  filepath.Join(dir, "hist.bin"),
-		slots: map[int64]histSlot{peakSlot: {tok: 100}, offSlot: {tok: 20}, satSlot: {tok: 20}},
+		slots: map[int64]histSlot{peakSlot: {tok: 100}, openSlot: {tok: 20}, offSlot: {tok: 20}, satSlot: {tok: 20}},
 	}
 	h.initPeak(logPath)
 	if got := h.slots[peakSlot].peak; got != 15 {
-		t.Fatalf("周一高峰 DeepSeek 应记 15，got %d", got)
+		t.Fatalf("周一高峰 OpenCode Go DeepSeek 应记 15，got %d", got)
+	}
+	if got := h.slots[openSlot].peak; got != 0 {
+		t.Fatalf("OpenDesign 固定倍率套餐不应计峰价，got %d", got)
 	}
 	if got := h.slots[offSlot].peak; got != 0 {
 		t.Fatalf("12:30 应为低谷，got %d", got)
@@ -77,7 +82,7 @@ func TestSyncPeakTailsNewRows(t *testing.T) {
 	logPath := filepath.Join(dir, "usage.jsonl")
 	at := peakTestMonday(t)
 	writeUsageLog(t, logPath,
-		fmt.Sprintf(`{"t":%q,"provider":"opendesign","model":"deepseek-v4.1-flash","in":10,"out":5}`, at.Format(time.RFC3339)),
+		fmt.Sprintf(`{"t":%q,"provider":"opencode-go","model":"deepseek-v4.1-flash","in":10,"out":5}`, at.Format(time.RFC3339)),
 	)
 	h := &usageHist{path: filepath.Join(dir, "hist.bin"), slots: map[int64]histSlot{}}
 	h.initPeak(logPath)

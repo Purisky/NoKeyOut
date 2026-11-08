@@ -383,7 +383,7 @@ func renderModulesWith(doc layoutDoc, c *Canvas, t *Txt, snap map[string]any, hi
 				c.fillRect(0, y, screenW, screenModuleGap, screenBG)
 				y += screenModuleGap
 			}
-			// 被分配高度整除不了时，行/图不会画到槽底，补一条底色
+			// 模块自己负责把内容铺到槽底；这里只补模块间隔的底色。
 		}
 	}
 	if y < screenH {
@@ -536,24 +536,29 @@ func renderModuleQuota(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 	cap := viewH / rowH
 	c.fillRect(0, y, screenW, viewH, screenBG)
 	if len(rows) == 0 {
-		screenCenter(c, screenW/2, y+40, t.get("err_wait"), screenMuted)
+		screenCenter(c, screenW/2, y+viewH/2, t.get("err_wait"), screenMuted)
 		return
 	}
-	drawRow := func(dst *Canvas, ry, i int) {
+	drawRow := func(dst *Canvas, ry, rh, i int) {
 		active := providerActive(snap, snapS(rows[i], "provider"))
 		deep := active && snapB(snap, "active_deepseek")
 		deepPeak := deep && cfg.Peak && snapB(snap, "active_deepseek_peak")
 		if cfg.Compact {
-			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep, deepPeak)
+			drawQuotaRowCompactAt(dst, t, ry, rh, i == 0, rows[i], 0, active, cfg.Now, deep, deepPeak)
 		} else {
-			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep, deepPeak)
+			drawQuotaRowDetailedAt(dst, t, ry, rh, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep, deepPeak)
 		}
 	}
-	// 装得下：**行高固定**（36px/20px 的设计单元，不随容器拉高），且**顶部对齐**
-	// （用户要求往上排；富余高度留在容器底部，不居中）。
+	// 装得下：把槽高均分给每行（行高 >= 基准行高），内容在行内垂直居中。
+	// 这样模块分配到的多余高度由行本身吸收，不会在模块底部留下整块空白。
 	if len(rows) <= cap {
+		fillH := viewH / len(rows)
 		for i := range rows {
-			drawRow(c, y+i*rowH, i)
+			rh := fillH
+			if i == len(rows)-1 {
+				rh = viewH - i*fillH // 余数给最后一行，正好铺到槽底
+			}
+			drawRow(c, y+i*fillH, rh, i)
 		}
 		return
 	}
@@ -568,7 +573,7 @@ func renderModuleQuota(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 			if ry >= viewH || ry+rowH <= 0 {
 				continue
 			}
-			drawRow(scratch, ry, i)
+			drawRow(scratch, ry, rowH, i)
 		}
 	}
 	c.blitFrom(y, scratch)
