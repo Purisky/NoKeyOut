@@ -13,9 +13,9 @@ import (
 	"image/color"
 	"image/png"
 	"io"
-	"strings"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -136,8 +136,15 @@ func (p *panel) screenPreview(w http.ResponseWriter, r *http.Request) {
 	anim := animState{}
 	if body.DemoProvider != "" {
 		// 动画预览：把该供应商强制置为"正在调用"，动画时钟由 demo_now 驱动。
+		deep := strings.Contains(strings.ToLower(body.DemoProvider), "deepseek")
 		snap["active_provider"] = body.DemoProvider
-		snap["active_deepseek"] = strings.Contains(strings.ToLower(body.DemoProvider), "deepseek")
+		snap["active_deepseek"] = deep
+		at := time.Now()
+		if body.DemoNow > 0 {
+			at = time.Unix(int64(body.DemoNow), 0)
+		}
+		// 预览峰价红色：demo_now 落在北京时间高峰即红；周末/节假日自动为蓝。
+		snap["active_deepseek_peak"] = deep && isDeepSeekPeak(at)
 		snap["active_until"] = time.Now().Add(time.Hour).Unix()
 		anim.now = body.DemoNow
 	}

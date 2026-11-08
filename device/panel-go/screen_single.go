@@ -307,11 +307,11 @@ func moneyValue(m map[string]any) string {
 // 所以「白字形压品牌色块」在淡品牌色上会糊；见 inkOnDark）。
 // 供应商处于调用窗口时，在图标**右下角**叠一枚活动徽章：DeepSeek 播放官方鲸鱼尾，
 // 其它品牌用通用指示。图标本身保持静态。
-func rowIcon(c *Canvas, m map[string]any, x, y, size int, active bool, now float64, deep bool) {
+func rowIcon(c *Canvas, m map[string]any, x, y, size int, active bool, now float64, deep, deepPeak bool) {
 	mk := providerBrand(snapS(m, "provider"), snapS(m, "name"))
 	drawStaticIcon(c, mk, x, y, size)
 	if active {
-		drawActivityBadge(c, x, y, size, now, deep)
+		drawActivityBadge(c, x, y, size, now, deep, deepPeak)
 	}
 }
 
@@ -319,8 +319,12 @@ func rowIcon(c *Canvas, m map[string]any, x, y, size int, active bool, now float
 // --dsw-alias-label-deep-diving = 70% deepseek-500 + 30% blue-950 ≈ rgb(52,94,186)）。
 var whaleInk = rgb565(52, 94, 186)
 
+// peakInk：DeepSeek 峰价时段的红色（鲸鱼尾与用量图中的峰价段共用，
+// 与 Web 图表的 --error #e5484d 一致）。
+var peakInk = rgb565(229, 72, 77)
+
 // drawActivityBadge：右下角徽章。先铺 1px 底色，避免徽章压在任何 logo 上看不清。
-func drawActivityBadge(c *Canvas, x, y, size int, now float64, deep bool) {
+func drawActivityBadge(c *Canvas, x, y, size int, now float64, deep, deepPeak bool) {
 	side := 15
 	if size >= 28 {
 		side = 21
@@ -336,7 +340,11 @@ func drawActivityBadge(c *Canvas, x, y, size int, now float64, deep bool) {
 			i = int(now*1000) / whaleFrameMS % len(frames)
 		}
 		// 直接 alpha 合成到图标上：不再铺底色方块，半透明边缘自然透出 logo。
-		c.bitmapAA(bx, by, frames[i], side, (side+3)/4, side, whaleInk)
+		ink := whaleInk
+		if deepPeak {
+			ink = peakInk
+		}
+		c.bitmapAA(bx, by, frames[i], side, (side+3)/4, side, ink)
 		return
 	}
 	thick := 2
@@ -392,13 +400,13 @@ func quotaAccount(m map[string]any, mask bool) string {
 // drawQuotaRowDetailed：详细行（36px）——图标 32 ｜ 第一行：供应商名 ｜ 第二行：周期 + 值区（条/倒计时）。
 // 内容 8px 边距（与其它模块同一网格）；行分隔线通栏（0..屏宽-1）。
 // inset = 右侧预留宽度（模块末尾的 "+N" 提示占位）。
-func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, mask bool, deep bool) {
+func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, mask bool, deep, deepPeak bool) {
 	c.fillRect(0, y, screenW, bandPoolH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+2, iconDetailed, active, now, deep)
+	rowIcon(c, m, x, y+2, iconDetailed, active, now, deep, deepPeak)
 
 	tx := x + iconDetailed + 6
 	name := snapS(m, "name")
@@ -418,13 +426,13 @@ func drawQuotaRowDetailed(c *Canvas, t *Txt, y int, first bool, m map[string]any
 }
 
 // drawQuotaRowCompact：简易行（20px）——图标 + 周期 + 值区（条/倒计时），整行一条。
-func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, _ bool, deep bool) {
+func drawQuotaRowCompact(c *Canvas, t *Txt, y int, first bool, m map[string]any, inset int, active bool, now float64, _ bool, deep, deepPeak bool) {
 	c.fillRect(0, y, screenW, bandCompactH, screenBG)
 	if !first {
 		c.hline(0, screenW-1, y, screenBorder)
 	}
 	const x = 8
-	rowIcon(c, m, x, y+1, iconCompact, active, now, deep)
+	rowIcon(c, m, x, y+1, iconCompact, active, now, deep, deepPeak)
 
 	bx := x + iconCompact + 6
 	drawWindowLabel(c, bx, y+4, m)

@@ -119,6 +119,23 @@ func TestVisualDump(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 峰价：鲸鱼尾变红，用量图的 DeepSeek 峰价段叠红。
+	snapPeak := testSnap()
+	snapPeak["active_provider"] = "deepseek"
+	snapPeak["active_deepseek"] = true
+	snapPeak["active_deepseek_peak"] = true
+	snapPeak["active_until"] = nowFn().Add(time.Hour).Unix()
+	for _, per := range []string{"today", "7d", "30d"} {
+		u := snapMap(snapMap(snapPeak, "usage"), per)
+		arr, _ := u["buckets"].([]any)
+		for i, raw := range arr {
+			m, _ := raw.(map[string]any)
+			if v, ok := snapF(m, "tokens"); ok && i%3 == 0 {
+				m["peak"] = v * 0.5
+			}
+		}
+	}
+	dump("07l_peak", layoutDoc{Modules: []string{"quota", "usage"}}, snapPeak, "zh")
 	// 多账号：同一供应商两条不同账号（未脱敏 → 显示账号；脱敏 → 显示 #序号）
 	multi := testSnap()
 	multi["pools"] = []any{

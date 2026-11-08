@@ -103,13 +103,13 @@ func TestActivityBadge(t *testing.T) {
 	drawStaticIcon(base, providerBrand("deepseek", "DeepSeek"), 8, 8, 28)
 	deep := newCanvas(screenW, screenH)
 	drawStaticIcon(deep, providerBrand("deepseek", "DeepSeek"), 8, 8, 28)
-	drawActivityBadge(deep, 8, 8, 28, 0.05, true)
+	drawActivityBadge(deep, 8, 8, 28, 0.05, true, false)
 	if string(deep.Buf) == string(base.Buf) {
 		t.Fatal("DeepSeek 徽章应改变画面")
 	}
 	generic := newCanvas(screenW, screenH)
 	drawStaticIcon(generic, providerBrand("openai", "OpenAI"), 8, 8, 28)
-	drawActivityBadge(generic, 8, 8, 28, 0.05, false)
+	drawActivityBadge(generic, 8, 8, 28, 0.05, false, false)
 	if string(generic.Buf) == string(base.Buf) {
 		t.Fatal("通用徽章应改变画面")
 	}
@@ -118,8 +118,8 @@ func TestActivityBadge(t *testing.T) {
 	}
 	// 60 帧 × 50ms 循环：相差整周期时是同一帧。
 	a, b := newCanvas(screenW, screenH), newCanvas(screenW, screenH)
-	drawActivityBadge(a, 8, 8, 28, 0.05, true)
-	drawActivityBadge(b, 8, 8, 28, 0.05+60*0.05, true)
+	drawActivityBadge(a, 8, 8, 28, 0.05, true, false)
+	drawActivityBadge(b, 8, 8, 28, 0.05+60*0.05, true, false)
 	if string(a.Buf) != string(b.Buf) {
 		t.Fatal("徽章动画周期应为 60×50ms")
 	}
@@ -147,7 +147,7 @@ func TestUsageChartSamplesTimestamps(t *testing.T) {
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	pts := []usagePoint{{ts: now.Add(-2 * time.Hour).Unix(), v: 10}, {ts: now.Add(-time.Hour).Unix(), v: 20}}
 	c := newCanvas(screenW, screenH)
-	drawUsageChart(c, 8, 0, 100, 20, pts, 3600, now.Add(-3*time.Hour).Unix(), now.Unix())
+	drawUsageChart(c, 8, 0, 100, 20, pts, 3600, now.Add(-3*time.Hour).Unix(), now.Unix(), false)
 	lit := 0
 	for y := 0; y < 20; y++ {
 		for x := 8; x < 108; x++ {
@@ -162,7 +162,7 @@ func TestUsageChartSamplesTimestamps(t *testing.T) {
 	// 窗口整体在数据左侧 → 全空。
 	empty := newCanvas(screenW, screenH)
 	empty.clear(screenBG)
-	drawUsageChart(empty, 8, 0, 100, 20, pts, 3600, now.Add(-10*time.Hour).Unix(), now.Add(-9*time.Hour).Unix())
+	drawUsageChart(empty, 8, 0, 100, 20, pts, 3600, now.Add(-10*time.Hour).Unix(), now.Add(-9*time.Hour).Unix(), false)
 	for y := 0; y < 19; y++ { // 最后一行的 1px 基线是设计内的，柱身不应出现
 		for x := 8; x < 108; x++ {
 			if pxAt(empty, x, y) != uint16(screenBG) {
@@ -194,5 +194,80 @@ func TestProviderCallDeltas(t *testing.T) {
 	// 无 providerKeys（老 magpie）：返回空 map，调用方走旧回退。
 	if cur, best := providerCallDeltas(prev, map[string]any{}); best != "" || len(cur) != 0 {
 		t.Fatalf("空数据 = %v / %q", cur, best)
+	}
+}
+
+func TestActivityBadgePeakIsRed(t *testing.T) {
+	blue := newCanvas(screenW, screenH)
+	drawStaticIcon(blue, providerBrand("deepseek", "DeepSeek"), 8, 8, 28)
+	drawActivityBadge(blue, 8, 8, 28, 0.05, true, false)
+
+	red := newCanvas(screenW, screenH)
+	drawStaticIcon(red, providerBrand("deepseek", "DeepSeek"), 8, 8, 28)
+	drawActivityBadge(red, 8, 8, 28, 0.05, true, true)
+
+	if string(blue.Buf) == string(red.Buf) {
+		t.Fatal("峰价徽章应与低谷徽章不同")
+	}
+	redDominant, blueDominant := false, false
+	for y := 8; y < 8+28; y++ {
+		for x := 8; x < 8+28; x++ {
+			r, g, b := softwareRGB(pxAt(red, x, y))
+			if r > b+2 && r > g+2 {
+				redDominant = true
+			}
+			r, g, b = softwareRGB(pxAt(blue, x, y))
+			if b > r+2 {
+				blueDominant = true
+			}
+		}
+	}
+	if !redDominant {
+		t.Fatal("峰价徽章应出现红色像素")
+	}
+	if !blueDominant {
+		t.Fatal("低谷徽章应保留蓝色鲸鱼尾")
+	}
+}
+
+func softwareRGB(c uint16) (r, g, b uint8) {
+	return uint8((c >> 11) & 0x1f), uint8((c >> 5) & 0x3f), uint8(c & 0x1f)
+}
+
+func TestUsageChartPeakRed(t *testing.T) {
+	now := time.Unix(1790000000, 0)
+	c := newCanvas(screenW, 40)
+	c.clear(screenBG)
+	pts := []usagePoint{{ts: now.Unix(), v: 100, peak: 40}}
+	drawUsageChart(c, 8, 0, 100, 20, pts, 3600, now.Unix(), now.Unix()+3600, true)
+	// 柱高 20，峰价占 40% → 底部 8px 红，上方蓝。
+	x := 58
+	if got := pxAt(c, x, 19); got != peakInk {
+		t.Fatalf("柱底应为峰价红 %04x，got %04x", peakInk, got)
+	}
+	if got := pxAt(c, x, 11); got != screenAccent {
+		t.Fatalf("峰价段上方应为蓝色 %04x，got %04x", screenAccent, got)
+	}
+}
+
+func TestDisplayPeakSetting(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DISPLAY_CFG_FILE", filepath.Join(dir, "display.json"))
+	if !loadDisplayCfg().deepseekPeakOn() {
+		t.Fatal("缺省应开启 DeepSeek 峰价提醒")
+	}
+	off := false
+	if err := saveDisplayCfg(displayCfg{DeepSeekPeak: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if loadDisplayCfg().deepseekPeakOn() {
+		t.Fatal("显式关闭后应保持关闭")
+	}
+	on := true
+	if err := saveDisplayCfg(displayCfg{DeepSeekPeak: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if !loadDisplayCfg().deepseekPeakOn() {
+		t.Fatal("显式开启后应开启")
 	}
 }

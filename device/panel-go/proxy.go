@@ -196,12 +196,13 @@ type stats struct {
 	quotaBusy atomic.Bool // 定时轮询与"供应商变更后立即刷新"不重叠
 
 	// 最近服务过的供应商与活动截止时间。
-	lastProvider    string
-	lastTokens      int64
-	providerCalls   map[string]int64 // 今日各供应商累计调用数（无 models 时的回退）
-	modelCalls      map[string]int64 // 今日各模型累计调用数（2s 粒度归因）
-	activeDeepseek  bool             // 最近一次归因的模型是否 DeepSeek（徽章优先级）
-	activeUntil     time.Time
+	lastProvider       string
+	lastTokens         int64
+	providerCalls      map[string]int64 // 今日各供应商累计调用数（无 models 时的回退）
+	modelCalls         map[string]int64 // 今日各模型累计调用数（2s 粒度归因）
+	activeDeepseek     bool             // 最近一次归因的模型是否 DeepSeek（徽章优先级）
+	activeDeepseekPeak bool             // 该 DeepSeek 调用是否落在峰价时段
+	activeUntil        time.Time
 }
 
 // providerActiveHold：活动指示保持时长。
@@ -213,6 +214,7 @@ func newStats(c *cfg) *stats {
 		if _, err := h.importJSONL(c.usageLogPath); err == nil {
 			h.save(true)
 		}
+		h.initPeak(c.usageLogPath)
 	}
 	return &stats{cfg: c, interval: 2 * time.Second, stop: make(chan struct{}), hist: h}
 }
@@ -228,6 +230,9 @@ func (s *stats) pollUsage() {
 	usage := map[string]any{}
 	var today map[string]any
 
+	if s.hist != nil {
+		s.hist.syncPeak()
+	}
 	for _, per := range usagePeriods {
 		st, _, body := s.httpGetHelper(s.cfg.gatewayBase+"/v1/magpie/usage?period="+per, 8*time.Second)
 		if st != 200 {
@@ -271,6 +276,7 @@ func (s *stats) pollUsage() {
 			since := now.Add(-period)
 			win := s.hist.window(since, period)
 			fine := s.hist.series(since, period, nCols)
+			finePeak := s.hist.seriesPeak(since, period, nCols)
 			sum := int64(0)
 			for _, n := range fine {
 				sum += n
@@ -282,9 +288,10 @@ func (s *stats) pollUsage() {
 				(per != "today" && sum > 0 && (total <= 0 || float64(sum) >= 0.9*total)))
 			if useHist {
 				view["since"] = since.Format(time.RFC3339)
-				view["buckets"] = timedBuckets(fine, since, colDur)
+				view["buckets"] = timedBuckets(fine, finePeak, since, colDur)
 				view["buckets_src"] = "hist"
 				view["col_seconds"] = int64(colDur / time.Second)
+				view["peak"] = win.peak
 				if per == "today" {
 					view["tokens"] = win.tok
 					view["calls"] = win.calls
@@ -330,10 +337,12 @@ func (s *stats) pollUsage() {
 		case mprov != "":
 			s.lastProvider = mprov
 			s.activeDeepseek = mdeep
+			s.activeDeepseekPeak = mdeep && isDeepSeekPeak(now)
 			s.activeUntil = now.Add(providerActiveHold)
 		case pbest != "":
 			s.lastProvider = pbest
 			s.activeDeepseek = false
+			s.activeDeepseekPeak = false
 			s.activeUntil = now.Add(providerActiveHold)
 		case len(mcur) == 0 && len(pcur) == 0:
 			// 老版本 magpie 没有 providerKeys：退回 tokens 增量 + 配额里的最近服务供应商。
@@ -428,13 +437,20 @@ func bucketVals(v map[string]any) []float64 {
 	return out
 }
 
-// timedBuckets：自建桶 → [{label,tokens,ts}]。ts 是桶起点（Unix 秒），
+// timedBuckets：自建桶 → [{label,tokens,peak,ts}]。ts 是桶起点（Unix 秒），
 // 渲染层按像素取样时用它定位，不再依赖轮询时刻的 since。
-func timedBuckets(v []int64, since time.Time, col time.Duration) []any {
+func timedBuckets(v, peak []int64, since time.Time, col time.Duration) []any {
 	out := make([]any, 0, len(v))
 	for i, n := range v {
+		p := int64(0)
+		if i < len(peak) {
+			p = peak[i]
+		}
+		if p > n {
+			p = n // peak 是 tok 的子集；聚合采样滞后时夹紧
+		}
 		out = append(out, map[string]any{
-			"label": "", "tokens": n,
+			"label": "", "tokens": n, "peak": p,
 			"ts": since.Add(time.Duration(i) * col).Unix(),
 		})
 	}
@@ -840,19 +856,21 @@ func (s *stats) snapshot() map[string]any {
 			"mask_accounts": disp.MaskAccounts,
 			"timezone":      disp.Timezone,
 			"tz":            loadLocation(disp.Timezone).String(),
+			"deepseek_peak": disp.deepseekPeakOn(),
 		},
-		"net":          netmon.snapshot(),
-		"traffic":      s.cur,
-		"usage":        s.usage,
-		"pools":        s.pools,
-		"usage_age_s":  usageAge,
-		"dash":         s.dashSnapLocked(),
-		"url":          panelURL,
-		"error":        s.err,
+		"net":         netmon.snapshot(),
+		"traffic":     s.cur,
+		"usage":       s.usage,
+		"pools":       s.pools,
+		"usage_age_s": usageAge,
+		"dash":        s.dashSnapLocked(),
+		"url":         panelURL,
+		"error":       s.err,
 		// 活动供应商：渲染层据此在图标右下角画徽章（DeepSeek 鲸鱼尾 / 通用指示）。
-		"active_provider": s.lastProvider,
-		"active_deepseek": s.activeDeepseek,
-		"active_until":    s.activeUntil.Unix(),
+		"active_provider":      s.lastProvider,
+		"active_deepseek":      s.activeDeepseek,
+		"active_deepseek_peak": s.activeDeepseekPeak,
+		"active_until":         s.activeUntil.Unix(),
 	}
 }
 

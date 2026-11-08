@@ -21,6 +21,12 @@ import (
 type displayCfg struct {
 	MaskAccounts bool   `json:"mask_accounts"`
 	Timezone     string `json:"timezone"` // IANA 名称；空 = 跟随系统
+	// DeepSeekPeak：可选的 DeepSeek 峰价提醒。nil = 默认开启；显式 false = 关闭。
+	DeepSeekPeak *bool `json:"deepseek_peak,omitempty"`
+}
+
+func (d displayCfg) deepseekPeakOn() bool {
+	return d.DeepSeekPeak == nil || *d.DeepSeekPeak
 }
 
 func displayCfgPath() string {
@@ -113,6 +119,9 @@ func displayFromSnap(snap map[string]any) displayCfg {
 	}
 	d := displayCfg{MaskAccounts: snapB(m, "mask_accounts")}
 	d.Timezone = snapS(m, "timezone")
+	if v, ok := m["deepseek_peak"].(bool); ok {
+		d.DeepSeekPeak = &v
+	}
 	return d
 }
 
@@ -128,6 +137,7 @@ func (p *panel) displayHandler(w http.ResponseWriter, r *http.Request) {
 			"mask_accounts": d.MaskAccounts,
 			"timezone":      d.Timezone,
 			"tz":            loadLocation(d.Timezone).String(),
+			"deepseek_peak": d.deepseekPeakOn(),
 			"zones":         displayZones,
 		}, nil)
 	case http.MethodPost:
@@ -146,6 +156,7 @@ func (p *panel) displayHandler(w http.ResponseWriter, r *http.Request) {
 			"mask_accounts": d.MaskAccounts,
 			"timezone":      d.Timezone,
 			"tz":            loadLocation(d.Timezone).String(),
+			"deepseek_peak": d.deepseekPeakOn(),
 		}, nil)
 	default:
 		p.errJSON(w, r, 405, "只支持 GET / POST")

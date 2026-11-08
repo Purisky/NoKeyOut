@@ -164,6 +164,7 @@ type moduleCfg struct {
 	Now          float64        // 动画时钟（秒）；0=静态
 	MaskAccounts bool           // 账号 ID 脱敏（显示 #序号）
 	TZ           *time.Location // 时间轴时区；nil = 系统
+	Peak         bool           // DeepSeek 峰价红色提醒（可选）
 }
 
 // pickRows：按"配额自定义"列表挑行，顺序即屏上顺序；列表为空 = 自动（原样返回）。
@@ -351,7 +352,7 @@ func netProblem(snap map[string]any) string {
 func renderModulesWith(doc layoutDoc, c *Canvas, t *Txt, snap map[string]any, hist *History, anim animState) {
 	disp := displayFromSnap(snap)
 	cfg := moduleCfg{Quotas: doc.Quotas, Usage: doc.Usage, Compact: doc.Compact, Now: anim.now,
-		MaskAccounts: disp.MaskAccounts, TZ: loadLocation(disp.Timezone)}
+		MaskAccounts: disp.MaskAccounts, TZ: loadLocation(disp.Timezone), Peak: disp.deepseekPeakOn()}
 	heights, gaps := moduleHeights(doc, snap)
 	type slot struct {
 		id   string
@@ -541,10 +542,11 @@ func renderModuleQuota(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 	drawRow := func(dst *Canvas, ry, i int) {
 		active := providerActive(snap, snapS(rows[i], "provider"))
 		deep := active && snapB(snap, "active_deepseek")
+		deepPeak := deep && cfg.Peak && snapB(snap, "active_deepseek_peak")
 		if cfg.Compact {
-			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep)
+			drawQuotaRowCompact(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep, deepPeak)
 		} else {
-			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep)
+			drawQuotaRowDetailed(dst, t, ry, i == 0, rows[i], 0, active, cfg.Now, cfg.MaskAccounts, deep, deepPeak)
 		}
 	}
 	// 装得下：**行高固定**（36px/20px 的设计单元，不随容器拉高），且**顶部对齐**
@@ -628,7 +630,6 @@ func renderModuleUsage(c *Canvas, t *Txt, snap map[string]any, hist *History, y,
 		colSec = int64(colDur / time.Second)
 	}
 	pts := usagePoints(u, sinceT, time.Duration(colSec)*time.Second)
-	drawUsageChart(c, 8, y+42, screenW-16, chartH, pts, colSec, sinceT.Unix(), now.Unix())
+	drawUsageChart(c, 8, y+42, screenW-16, chartH, pts, colSec, sinceT.Unix(), now.Unix(), cfg.Peak)
 	drawTimeAxisTZ(c, 8, y+42+chartH, screenW-16, sinceT, now, period, cfg.TZ)
 }
-

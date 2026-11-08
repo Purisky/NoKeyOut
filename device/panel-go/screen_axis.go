@@ -15,8 +15,9 @@ import (
 )
 
 type usagePoint struct {
-	ts int64
-	v  float64
+	ts   int64
+	v    float64
+	peak float64 // DeepSeek 峰价 tokens（v 的子集；缺省 0）
 }
 
 // usagePoints：快照分桶 → 带起点时间戳的序列（按时间升序）。
@@ -34,7 +35,11 @@ func usagePoints(u map[string]any, since time.Time, col time.Duration) []usagePo
 		if !ok || ts <= 0 {
 			ts = float64(since.Add(time.Duration(i) * col).Unix())
 		}
-		pts = append(pts, usagePoint{ts: int64(ts), v: v})
+		p := usagePoint{ts: int64(ts), v: v}
+		if peak, ok := snapF(m, "peak"); ok {
+			p.peak = peak
+		}
+		pts = append(pts, p)
 	}
 	sort.Slice(pts, func(i, j int) bool { return pts[i].ts < pts[j].ts })
 	return pts
@@ -79,7 +84,8 @@ func bucketAt(pts []usagePoint, col int64, t int64) (float64, int) {
 }
 
 // drawUsageChart：在 [start,end] 窗口上按像素取样画柱。
-func drawUsageChart(c *Canvas, x, y, w, h int, pts []usagePoint, col int64, start, end int64) {
+// showPeak：是否把 DeepSeek 峰价 tokens 叠加为红色柱段（蓝色总量保持不变）。
+func drawUsageChart(c *Canvas, x, y, w, h int, pts []usagePoint, col int64, start, end int64, showPeak bool) {
 	if len(pts) == 0 || w < 8 || h < 4 || end <= start {
 		return
 	}
@@ -106,6 +112,20 @@ func drawUsageChart(c *Canvas, x, y, w, h int, pts []usagePoint, col int64, star
 			colr = screenAccent
 		}
 		c.fillRect(x+i, y+h-bh, 1, bh, colr)
+		if !showPeak || bi < 0 || v <= 0 {
+			continue
+		}
+		peak := pts[bi].peak
+		if peak > v {
+			peak = v
+		}
+		if peak > 0 {
+			ph := int(float64(h) * peak / mx)
+			if ph < 1 {
+				ph = 1
+			}
+			c.fillRect(x+i, y+h-ph, 1, ph, peakInk)
+		}
 	}
 }
 

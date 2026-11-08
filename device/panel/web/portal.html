@@ -124,6 +124,8 @@
   .dbkpi.bad .dbkpi-value { color: var(--error, #e5484d); }
   .dbkpi.warn .dbkpi-value { color: var(--warning, #d97706); }
   .dbchart-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .legend { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   .dbchart-head h2 { margin: 0; }
   .seg { display: inline-flex; border: 1px solid var(--border, #8886);
          border-radius: 8px; overflow: hidden; }
@@ -393,6 +395,12 @@
         <button class="act" id="dispsave">保存显示设置</button>
         <span id="dispmsg" class="muted"></span>
       </div>
+      <div class="row" style="margin-top:10px">
+        <label class="muted" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="disppeak"> DeepSeek 峰价提醒（红色）
+        </label>
+        <span class="muted">仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计。</span>
+      </div>
 
       <!-- 配额自定义：列表里加「供应商 / 周期」，顺序即屏上顺序；空 = 自动 -->
       <div class="muted" style="margin-top:12px">配额自定义（空 = 自动：全部配额按剩余升序）</div>
@@ -478,6 +486,9 @@ NK.I18N = {
   "近 7 天 tokens": "7-day tokens", "近 30 天 tokens": "30-day tokens",
   "近 7 天调用": "7-day calls", "近 30 天调用": "30-day calls",
   "用量趋势": "Usage trend", "峰值": "Peak", "平均": "Avg",
+  "低谷": "Off-peak", "DeepSeek 峰价": "DeepSeek peak",
+  "DeepSeek 峰价提醒（红色）": "DeepSeek peak alert (red)",
+  "仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计。": "DeepSeek calls only; weekends and Chinese public holidays count as off-peak.",
   "输入": "Input", "输出": "Output", "缓存读": "Cache reads",
   "估算成本": "Est. cost", "按 magpie 价格估算": "Estimated at magpie prices",
   "平均 tokens/次": "Avg tokens/call", "tokens ÷ 调用次数": "tokens ÷ calls",
@@ -918,20 +929,30 @@ function renderChart() {
   const now = Date.now();
   const start = now - span, end = now;
   const colMs = (Number(v.col_seconds) || 0) * 1000 || span / Math.max(1, raw.length) ;
-  let buckets = raw.map(b => ({ ts: (Number(b && b.ts) || 0) * 1000, tokens: Number(b && b.tokens) || 0 }))
+  const showPeak = DISP.peak !== false;
+  let buckets = raw.map(b => ({ ts: (Number(b && b.ts) || 0) * 1000, tokens: Number(b && b.tokens) || 0,
+    peak: showPeak ? (Number(b && b.peak) || 0) : 0 }))
     .filter(b => b.ts > 0);
   if (!buckets.length && raw.length) {
     const since = Date.parse(v.since || '') || (start + span - raw.length * colMs);
-    buckets = raw.map((b, i) => ({ ts: since + i * colMs, tokens: Number(b && b.tokens) || 0 }));
+    buckets = raw.map((b, i) => ({ ts: since + i * colMs, tokens: Number(b && b.tokens) || 0,
+      peak: showPeak ? (Number(b && b.peak) || 0) : 0 }));
   }
   const total = buckets.reduce((a, b) => a + b.tokens, 0) || Number(v.tokens) || 0;
+  const peakTotal = buckets.reduce((a, b) => a + Math.min(b.peak, b.tokens), 0);
   if (sum) {
-    sum.textContent = buckets.length > 1
-      ? `${NK.t('峰值')} ${fmtN(Math.max(...buckets.map(d => d.tokens), 0))} tokens · ` +
-        `${NK.t('平均')} ${fmtN(total / buckets.length)}`
-      : '';
+    const bits = [];
+    if (buckets.length > 1) bits.push(`${NK.t('峰值')} ${fmtN(Math.max(...buckets.map(d => d.tokens), 0))} tokens · ` +
+      `${NK.t('平均')} ${fmtN(total / buckets.length)}`);
+    if (showPeak) {
+      bits.push(`<span class="legend"><i style="background:var(--accent,#06c)"></i>${NK.t('低谷')}</span>`);
+      if (peakTotal > 0) bits.push(`<span class="legend"><i style="background:var(--error,#e5484d)"></i>` +
+        `${NK.t('DeepSeek 峰价')} ${fmtN(peakTotal)}</span>`);
+    }
+    sum.innerHTML = bits.join(' · ');
   }
   if (!buckets.length) {
+    if (sum) sum.innerHTML = '';
     el.innerHTML = `<div class="dbempty">${NK.t('暂无趋势数据')}</div>`;
     return;
   }
@@ -953,9 +974,18 @@ function renderChart() {
     const h = plotH * (d.tokens / max);
     const y = T + plotH - h;
     const x = xa, w = Math.max(1, xb - xa);
-    return `<g><title>${esc(tzFull(d.ts) + ' · ' + fmtN(d.tokens) + ' tokens')}</title>` +
+    const peak = Math.min(d.peak || 0, d.tokens || 0);
+    const ph = plotH * (peak / max);
+    const py = T + plotH - ph;
+    const op = i === newest ? '.95' : '.7';
+    const tip = tzFull(d.ts) + ' · ' + fmtN(d.tokens) + ' tokens' +
+      (peak > 0 ? ` · ${fmtN(peak)} ${NK.t('DeepSeek 峰价')}` : '');
+    return `<g><title>${esc(tip)}</title>` +
       `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" ` +
-      `rx="1" fill="var(--accent, #06c)" opacity="${i === newest ? '.95' : '.7'}"/></g>`;
+      `rx="1" fill="var(--accent, #06c)" opacity="${op}"/>` +
+      (peak > 0 ? `<rect x="${x.toFixed(1)}" y="${py.toFixed(1)}" width="${w.toFixed(1)}" ` +
+        `height="${Math.max(1, ph).toFixed(1)}" rx="1" fill="var(--error, #e5484d)" opacity="${op}"/>` : '') +
+      `</g>`;
   }).join('');
   const { ticks, labels } = axisAt(start, end, DB.period);
   const tickLines = ticks.map(t => {
@@ -1433,14 +1463,15 @@ const SCR = { budget: 0, avail: [], choices: [], periods: ['today'],
               mods: [], quotas: [], usage: 'today', compact: false, bad: true };
 
 // 显示偏好（账号脱敏 / 时区）：Web 与小屏共用一份，存设备端。
-const DISP = { mask: false, tz: '', zones: [] };
+const DISP = { mask: false, tz: '', zones: [], peak: true };
 const dispAcct = p => {
   if (!p || !p.account || !(Number(p.accounts_n) > 1)) return '';
   return DISP.mask && p.account_idx ? '#' + p.account_idx : p.account;
 };
 function dispRender() {
-  const sel = $('#disptz'), msk = $('#dispmask');
+  const sel = $('#disptz'), msk = $('#dispmask'), pk = $('#disppeak');
   if (msk) msk.checked = !!DISP.mask;
+  if (pk) pk.checked = DISP.peak !== false;
   if (sel) {
     const opts = [`<option value="">${esc(NK.t('跟随系统'))}</option>`].concat(
       (DISP.zones || []).map(z => `<option value="${esc(z.id)}">${esc(z.label || z.id)}</option>`));
@@ -1454,6 +1485,7 @@ async function dispLoad() {
     DISP.mask = !!j.mask_accounts;
     DISP.tz = j.timezone || '';
     DISP.zones = j.zones || [];
+    DISP.peak = j.deepseek_peak !== false;
   } catch {}
   dispRender();
   renderPools();
@@ -1465,11 +1497,13 @@ async function dispSave() {
   try {
     const r = await fetch('/api/display', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mask_accounts: !!$('#dispmask').checked, timezone: $('#disptz').value || '' }) });
+      body: JSON.stringify({ mask_accounts: !!$('#dispmask').checked, timezone: $('#disptz').value || '',
+        deepseek_peak: !!$('#disppeak').checked }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || NK.t('保存失败'));
     DISP.mask = !!j.mask_accounts;
     DISP.tz = j.timezone || '';
+    DISP.peak = j.deepseek_peak !== false;
     if (msg) { msg.textContent = NK.t('已保存'); msg.style.color = 'var(--success, #30a46c)'; }
     renderPools(); renderChart(); scrQuotaList();
     if (typeof scrPrev === 'function') scrPrev();
