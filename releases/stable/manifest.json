@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "version": "0.4.12",
+  "version": "0.4.13",
   "channel": "stable",
   "minVersion": "",
   "magpie": "0.1.3315",
-  "issuedAt": "2026-11-08T15:47:01Z",
-  "notes": "Panel: browse and classify call errors; hide quota/limit/subscription/canceled by default.",
+  "issuedAt": "2026-11-08T16:45:24Z",
+  "notes": "Panel: screen module rows fill their slots; peak red only for DeepSeek official/OpenCode Go/Command Code.",
   "assets": {
     "linux-arm64": {
-      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.12/nokeyout-0.4.12-linux-arm64.tar.gz",
-      "sha256": "48498eb4ce4556b0ec3b1a0b637eb1adb242ce05036c406389a90b801d9feecf",
-      "size": 35474939
+      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.13/nokeyout-0.4.13-linux-arm64.tar.gz",
+      "sha256": "2de70930387341473aa1fc86061c88c49f4868713dbe9d99d61776745eba1149",
+      "size": 35476685
     }
   }
 }
