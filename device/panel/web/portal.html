@@ -397,9 +397,9 @@
       </div>
       <div class="row" style="margin-top:10px">
         <label class="muted" style="display:flex;align-items:center;gap:6px">
-          <input type="checkbox" id="disppeak"> DeepSeek 峰价提醒（红色）
+          <input type="checkbox" id="disppeak"> DeepSeek 峰价红色提醒（动画 + 用量图）
         </label>
-        <span class="muted">仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计。</span>
+        <span class="muted">仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计；关闭后动画和用量图都不显示红色。</span>
       </div>
 
       <!-- 配额自定义：列表里加「供应商 / 周期」，顺序即屏上顺序；空 = 自动 -->
@@ -486,9 +486,9 @@ NK.I18N = {
   "近 7 天 tokens": "7-day tokens", "近 30 天 tokens": "30-day tokens",
   "近 7 天调用": "7-day calls", "近 30 天调用": "30-day calls",
   "用量趋势": "Usage trend", "峰值": "Peak", "平均": "Avg",
-  "低谷": "Off-peak", "DeepSeek 峰价": "DeepSeek peak",
-  "DeepSeek 峰价提醒（红色）": "DeepSeek peak alert (red)",
-  "仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计。": "DeepSeek calls only; weekends and Chinese public holidays count as off-peak.",
+  "其他": "Other", "DeepSeek 峰价": "DeepSeek peak",
+  "DeepSeek 峰价红色提醒（动画 + 用量图）": "DeepSeek peak red alert (animation + usage chart)",
+  "仅 DeepSeek 调用生效；周末与中国法定节假日按低谷计；关闭后动画和用量图都不显示红色。": "DeepSeek calls only; weekends and Chinese public holidays count as off-peak. Turning this off hides all red in the animation and usage chart.",
   "输入": "Input", "输出": "Output", "缓存读": "Cache reads",
   "估算成本": "Est. cost", "按 magpie 价格估算": "Estimated at magpie prices",
   "平均 tokens/次": "Avg tokens/call", "tokens ÷ 调用次数": "tokens ÷ calls",
@@ -945,7 +945,7 @@ function renderChart() {
     if (buckets.length > 1) bits.push(`${NK.t('峰值')} ${fmtN(Math.max(...buckets.map(d => d.tokens), 0))} tokens · ` +
       `${NK.t('平均')} ${fmtN(total / buckets.length)}`);
     if (showPeak) {
-      bits.push(`<span class="legend"><i style="background:var(--accent,#06c)"></i>${NK.t('低谷')}</span>`);
+      bits.push(`<span class="legend"><i style="background:var(--accent,#06c)"></i>${NK.t('其他')}</span>`);
       if (peakTotal > 0) bits.push(`<span class="legend"><i style="background:var(--error,#e5484d)"></i>` +
         `${NK.t('DeepSeek 峰价')} ${fmtN(peakTotal)}</span>`);
     }
@@ -975,11 +975,12 @@ function renderChart() {
     const y = T + plotH - h;
     const x = xa, w = Math.max(1, xb - xa);
     const peak = Math.min(d.peak || 0, d.tokens || 0);
+    const other = Math.max(0, (d.tokens || 0) - peak);
     const ph = plotH * (peak / max);
     const py = T + plotH - ph;
     const op = i === newest ? '.95' : '.7';
     const tip = tzFull(d.ts) + ' · ' + fmtN(d.tokens) + ' tokens' +
-      (peak > 0 ? ` · ${fmtN(peak)} ${NK.t('DeepSeek 峰价')}` : '');
+      (peak > 0 ? ` · ${NK.t('DeepSeek 峰价')} ${fmtN(peak)} · ${NK.t('其他')} ${fmtN(other)}` : '');
     return `<g><title>${esc(tip)}</title>` +
       `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" ` +
       `rx="1" fill="var(--accent, #06c)" opacity="${op}"/>` +

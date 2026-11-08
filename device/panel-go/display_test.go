@@ -240,13 +240,17 @@ func TestUsageChartPeakRed(t *testing.T) {
 	c.clear(screenBG)
 	pts := []usagePoint{{ts: now.Unix(), v: 100, peak: 40}}
 	drawUsageChart(c, 8, 0, 100, 20, pts, 3600, now.Unix(), now.Unix()+3600, true)
-	// 柱高 20，峰价占 40% → 底部 8px 红，上方蓝。
+	// 柱高 20，峰价占 40% → 底部 8px 红，上方 12px 蓝；不能整柱变红。
 	x := 58
-	if got := pxAt(c, x, 19); got != peakInk {
-		t.Fatalf("柱底应为峰价红 %04x，got %04x", peakInk, got)
+	for y := range 12 {
+		if got := pxAt(c, x, y); got != screenAccent {
+			t.Fatalf("y=%d 非峰价部分应为蓝色 %04x，got %04x", y, screenAccent, got)
+		}
 	}
-	if got := pxAt(c, x, 11); got != screenAccent {
-		t.Fatalf("峰价段上方应为蓝色 %04x，got %04x", screenAccent, got)
+	for y := 12; y < 20; y++ {
+		if got := pxAt(c, x, y); got != peakInk {
+			t.Fatalf("y=%d 峰价部分应为红色 %04x，got %04x", y, peakInk, got)
+		}
 	}
 }
 
