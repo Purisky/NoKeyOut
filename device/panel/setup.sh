@@ -283,6 +283,16 @@ rm -f /etc/systemd/system/nokeyout-key-proxy.service \
       /var/lib/nokeyout/secrets/proxy-admin.token
 run "systemctl daemon-reload"
 run "systemctl enable nokeyout-panel"
+# DeepSeek 峰价统计需要读 magpie 的逐请求流水。只给目录遍历 + usage.jsonl 读，
+# 不改 magpie-config 其余文件权限（provider keys 仍只归 magpie-rt）。
+if [ -d /var/lib/nokeyout/magpie-config ]; then
+  run "chmod o+x /var/lib/nokeyout/magpie-config /var/lib/nokeyout/magpie-config/magpie 2>/dev/null || true"
+  if command -v setfacl >/dev/null 2>&1; then
+    run "setfacl -m u:nokeyout:r /var/lib/nokeyout/magpie-config/magpie/usage.jsonl 2>/dev/null || true"
+  else
+    run "chmod o+r /var/lib/nokeyout/magpie-config/magpie/usage.jsonl 2>/dev/null || true"
+  fi
+fi
 run "systemctl restart nokeyout-panel"
 
 say "6b/7 物理开关门控"

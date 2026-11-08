@@ -223,7 +223,7 @@
     <div class="dbkpi-head">
       <span class="muted">用量周期</span>
       <div class="seg" id="dbperiod">
-        <button type="button" data-p="today" class="on" title="设备本地今日 00:00 起">近1日</button>
+        <button type="button" data-p="today" class="on" title="滚动近24小时（包含昨天）">近24小时</button>
         <button type="button" data-p="7d">近 7 天</button>
         <button type="button" data-p="30d">近 30 天</button>
       </div>
@@ -477,11 +477,11 @@ NK.I18N = {
   "加载中…": "Loading…", "采集中…": "Collecting…",
   "可达": "up", "不可达": "down",
   "状态获取失败": "status fetch failed",
-  "缓存命中": "Cache hit", "近1日 tokens": "Last 1 day tokens",
-  "近1日调用": "Last 1 day calls",
+  "缓存命中": "Cache hit", "近24小时 tokens": "Last 24 hours tokens",
+  "近24小时调用": "Last 24 hours calls",
   "统计获取失败": "stats fetch failed",
   "刷新": "Refresh",
-  "近1日": "Last 1 day", "近 7 天": "7 days", "近 30 天": "30 days", "用量周期": "Usage period",
+  "近24小时": "Last 24 hours", "近 7 天": "7 days", "近 30 天": "30 days", "用量周期": "Usage period",
   "当前": "current", "状态": "state", "最新": "latest", "更新器不可用": "updater unavailable",
   "近 7 天 tokens": "7-day tokens", "近 30 天 tokens": "30-day tokens",
   "近 7 天调用": "7-day calls", "近 30 天调用": "30-day calls",
@@ -717,14 +717,14 @@ try {
   if (p === 'today' || p === '7d' || p === '30d') DB.period = p;
 } catch {}
 
-const DBP = { today: '近1日', '7d': '近 7 天', '30d': '近 30 天' };
+const DBP = { today: '近24小时', '7d': '近 7 天', '30d': '近 30 天' };
 const nf = new Intl.NumberFormat('en-US');
 const dbTokensLabel = () => NK.t({
-  today: '近1日 tokens', '7d': '近 7 天 tokens', '30d': '近 30 天 tokens',
-}[DB.period] || '近1日 tokens');
+  today: '近24小时 tokens', '7d': '近 7 天 tokens', '30d': '近 30 天 tokens',
+}[DB.period] || '近24小时 tokens');
 const dbCallsLabel = () => NK.t({
-  today: '近1日调用', '7d': '近 7 天调用', '30d': '近 30 天调用',
-}[DB.period] || '近1日调用');
+  today: '近24小时调用', '7d': '近 7 天调用', '30d': '近 30 天调用',
+}[DB.period] || '近24小时调用');
 
 function fmtN(n) {
   if (n == null || n === '') return '—';
@@ -779,9 +779,23 @@ function dbUsage() {
   return {};
 }
 
+async function apiJSON(url, opts) {
+  const r = await fetch(url, { cache: 'no-store', ...(opts || {}) });
+  if (r.status === 401) {
+    location.href = '/login';
+    throw new Error('unauthorized');
+  }
+  if (!r.ok) {
+    let j = {};
+    try { j = await r.json(); } catch {}
+    throw new Error(j.error || ('HTTP ' + r.status));
+  }
+  return r.json();
+}
+
 async function status() {
   try {
-    const s = await (await fetch('/api/status')).json();
+    const s = await apiJSON('/api/status');
     DB.status = s; DB.statusErr = null;
     if (s.gatewayUrl) GWURL = s.gatewayUrl.replace(/\/+$/, '');
     if (s.pluginUrl) {
@@ -795,7 +809,7 @@ async function status() {
 }
 async function stats() {
   try {
-    const s = await (await fetch('/api/stats')).json();
+    const s = await apiJSON('/api/stats');
     DB.stats = s; DB.statsErr = null;
   } catch (e) {
     DB.statsErr = String(e && e.message ? e.message : e);
@@ -1138,9 +1152,9 @@ function keysPaneVisible() {
   const p = document.querySelector('[data-pane="models"]');
   return !!p && p.style.display !== 'none';
 }
-window.addEventListener('focus', () => { if (keysPaneVisible()) keyring(); });
+window.addEventListener('focus', () => { status(); stats(); if (keysPaneVisible()) keyring(); });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && keysPaneVisible()) keyring();
+  if (!document.hidden) { status(); stats(); if (keysPaneVisible()) keyring(); }
 });
 NK.I18N['作用域 '] = 'scope ';
 NK.I18N['全部模型'] = 'all models';

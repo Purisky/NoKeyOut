@@ -410,7 +410,10 @@ func (p *panel) page(w http.ResponseWriter, r *http.Request, name string, code i
 		p.send(w, r, 404, []byte("page not found"), "text/html; charset=utf-8", extra)
 		return
 	}
-	p.send(w, r, code, b, "text/html; charset=utf-8", extra)
+	hdr := make([][2]string, 0, len(extra)+1)
+	hdr = append(hdr, extra...)
+	hdr = append(hdr, [2]string{"Cache-Control", "no-store"})
+	p.send(w, r, code, b, "text/html; charset=utf-8", hdr)
 }
 
 func (p *panel) redirect(w http.ResponseWriter, r *http.Request, loc string) {
