@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "version": "0.4.11",
+  "version": "0.4.12",
   "channel": "stable",
   "minVersion": "",
   "magpie": "0.1.3315",
-  "issuedAt": "2026-11-08T15:30:47Z",
-  "notes": "Panel: dashboard traffic cache/session fix, 24h label, and DeepSeek peak log read access.",
+  "issuedAt": "2026-11-08T15:47:01Z",
+  "notes": "Panel: browse and classify call errors; hide quota/limit/subscription/canceled by default.",
   "assets": {
     "linux-arm64": {
-      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.11/nokeyout-0.4.11-linux-arm64.tar.gz",
-      "sha256": "e9ea8099e62ec1acafa5a715e1c61da1173ef707628cad9ca7320af11275bd32",
-      "size": 35464922
+      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.12/nokeyout-0.4.12-linux-arm64.tar.gz",
+      "sha256": "48498eb4ce4556b0ec3b1a0b637eb1adb242ce05036c406389a90b801d9feecf",
+      "size": 35474939
     }
   }
 }
