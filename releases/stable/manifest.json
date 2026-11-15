@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "version": "0.4.18",
+  "version": "0.4.19",
   "channel": "stable",
   "minVersion": "",
   "magpie": "0.1.4095",
-  "issuedAt": "2026-11-13T21:04:28Z",
+  "issuedAt": "2026-11-15T20:00:28Z",
   "notes": "",
   "assets": {
     "linux-arm64": {
-      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.18/nokeyout-0.4.18-linux-arm64.tar.gz",
-      "sha256": "4a40d7be4d85585a21864f27bbc2622c7712cef654949cb2fc123befb348f5a7",
-      "size": 42368664
+      "url": "https://github.com/Purisky/NoKeyOut/releases/download/v0.4.19/nokeyout-0.4.19-linux-arm64.tar.gz",
+      "sha256": "99e7f8a584aa5a57d210413e681c9c73f8a349f96b8166aef82d9f5ea91db5ea",
+      "size": 42377354
     }
   }
 }
