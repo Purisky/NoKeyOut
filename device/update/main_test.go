@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -11,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -139,5 +143,48 @@ func TestValidateManifestRejectsBadAssets(t *testing.T) {
 	}}
 	if err := validateManifest(m); err == nil {
 		t.Fatal("bad sha256 accepted")
+	}
+}
+
+func TestDownloadAssetReportsProgress(t *testing.T) {
+	payload := bytes.Repeat([]byte("nokeyout"), 1<<17) // 1 MiB
+	sum := sha256.Sum256(payload)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := config{updateDir: dir, stateFile: filepath.Join(dir, "state.json"), allowHTTP: true}
+	rawURL := srv.URL + "/nokeyout-9.9.9-linux-arm64.tar.gz"
+	a := asset{URL: rawURL, Size: int64(len(payload)), SHA256: hex.EncodeToString(sum[:])}
+	started := "2026-11-16T00:00:00Z"
+	got, err := downloadAsset(cfg, a, rawURL, "9.9.9", started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "nokeyout-9.9.9-linux-arm64.tar.gz" {
+		t.Fatalf("unexpected download path %q", got)
+	}
+	b, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(b, payload) {
+		t.Fatal("downloaded bytes differ from payload")
+	}
+	st := readState(cfg)
+	if st.State != "verifying" {
+		t.Fatalf("state = %q, want verifying", st.State)
+	}
+	if st.Started != started {
+		t.Fatalf("started = %q, want %q", st.Started, started)
+	}
+	if st.Total != int64(len(payload)) || st.Downloaded != int64(len(payload)) {
+		t.Fatalf("progress = %d/%d, want %d/%d", st.Downloaded, st.Total, len(payload), len(payload))
+	}
+	if st.Percent != 100 {
+		t.Fatalf("percent = %v, want 100", st.Percent)
 	}
 }

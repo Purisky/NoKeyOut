@@ -38,6 +38,17 @@
              background: transparent; color: inherit; resize: vertical; }
   .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
   .muted { color: var(--muted, #888); font-size: 12px; }
+  .nkuprog { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border, #8884);
+             border-radius: 10px; background: var(--surface, #8881); }
+  .nkuprog-head { display: flex; justify-content: space-between; gap: 12px;
+                  font-size: 13px; margin-bottom: 7px; }
+  .nkuprog-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .nkuprog-bar { height: 8px; border-radius: 999px; overflow: hidden; background: var(--border, #8883); }
+  .nkuprog-bar > i { display: block; height: 100%; width: 0;
+                     background: var(--accent, #06c); transition: width .25s ease; }
+  .nkuprog-bar > i.ok { background: var(--success, #2f9e44); }
+  .nkuprog-bar > i.bad { background: var(--error, #e5484d); }
+  #nkuMeta { margin-top: 7px; font-variant-numeric: tabular-nums; }
   .kv { display: inline-flex; gap: 6px; margin-right: 18px; }
   .kv b { font-weight: 600; }
   input[type=text], select { padding: 6px 8px; font: inherit;
@@ -368,6 +379,14 @@
         <span id="nkuMsg" class="muted"></span>
       </div>
       <div id="nkuState" class="muted">—</div>
+      <div id="nkuProgress" class="nkuprog" hidden>
+        <div class="nkuprog-head">
+          <span id="nkuPhase">—</span>
+          <span id="nkuPct" class="nkuprog-pct"></span>
+        </div>
+        <div class="nkuprog-bar"><i id="nkuBar"></i></div>
+        <div id="nkuMeta" class="muted"></div>
+      </div>
       <div class="muted" style="margin-top:8px">签名只约束这个官方更新按钮；自行修改的 NoKeyOut 可直接替换二进制，或用
         <code>nokeyout-upgrade nk-deploy &lt;本地 tarball&gt;</code> 离线安装。设备没有安全启动/硬件锁定。</div>
     </section>
@@ -658,6 +677,9 @@ Object.assign(NK.I18N, {
   "升级流程：拉镜像 → 重建网关 → 健康检查 → 一次真实调用冒烟；任一步失败自动回滚。 整个网关 LLM 服务会中断": "Upgrade: pull image → recreate gateway → health check → one real call. Any failure rolls back. The whole gateway LLM service is interrupted",
   "回滚": "Roll back",
   "安装最新": "Install latest",
+  "下载中": "Downloading", "校验中": "Verifying", "准备部署": "Preparing deploy",
+  "安装中": "Installing", "已完成": "Done", "回滚中": "Rolling back",
+  "已回滚": "Rolled back", "已提交": "submitted",
   "密钥": "Key",
   "小屏最多显示 3 个模块，顺序即自上而下显示顺序；「槽高合计 ≤": "Up to 3 modules, top to bottom; total height ≤",
   "屏幕": "Screen",
@@ -1405,23 +1427,61 @@ $('#krjump').onclick = openGatewayKeys;
 
 // ---- 系统页签：NoKeyOut 自更新
 let nkuTimer = null;
+let nkuBusy = false;
+const NKU_ACTIVE = new Set(['downloading', 'verifying', 'starting', 'running', 'rolling_back']);
+const NKU_LABEL = {
+  downloading: '下载中', verifying: '校验中', starting: '准备部署',
+  running: '安装中', success: '已完成', failed: '失败',
+  rolling_back: '回滚中', rolled_back: '已回滚',
+};
+function nkuBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
 function nkuRender(j) {
   const st = (j && j.state) || {};
   const bits = [];
   if (j && j.current) bits.push(NK.t('当前') + ' ' + j.current);
-  if (st.state) bits.push(NK.t('状态') + ' ' + st.state + (st.version ? ' ' + st.version : ''));
-  if (st.message) bits.push(st.message);
+  if (st.state) {
+    const phase = NK.t(NKU_LABEL[st.state] || st.state);
+    bits.push(NK.t('状态') + ' ' + phase + (st.version ? ' ' + st.version : ''));
+  }
   if (st.error) bits.push(NK.t('错误') + ' ' + st.error);
   $('#nkuState').textContent = bits.join(' · ') || '—';
-  const active = ['starting', 'running', 'rolling_back'].includes(st.state);
-  if (active && !nkuTimer) nkuTimer = setInterval(nkuStatus, 3000);
-  if (!active && nkuTimer) { clearInterval(nkuTimer); nkuTimer = null; }
+
+  const total = Number(st.total) || 0;
+  const done = Number(st.downloaded) || 0;
+  let pct = total > 0 ? Math.min(100, done * 100 / total) : (Number(st.percent) || 0);
+  if (st.state === 'success' || st.state === 'rolled_back') pct = 100;
+  if (!(pct > 0)) pct = 0;
+  const speed = Number(st.bytes_per_sec) || 0;
+  const active = NKU_ACTIVE.has(st.state);
+  const prog = $('#nkuProgress');
+  if (prog) {
+    prog.hidden = !st.state;
+    if (st.state) {
+      $('#nkuPhase').textContent = NK.t(NKU_LABEL[st.state] || st.state);
+      $('#nkuPct').textContent = (total > 0 || pct >= 100) ? pct.toFixed(0) + '%' : '';
+      const bar = $('#nkuBar');
+      bar.style.width = pct + '%';
+      bar.className = st.state === 'failed' ? 'bad' : (st.state === 'success' || st.state === 'rolled_back' ? 'ok' : '');
+      const meta = [];
+      if (total > 0) meta.push(nkuBytes(done) + ' / ' + nkuBytes(total));
+      if (speed > 0 && active) meta.push(nkuBytes(speed) + '/s');
+      if (st.message) meta.push(st.message);
+      if (st.error) meta.push(st.error);
+      $('#nkuMeta').textContent = meta.join(' · ') || '—';
+    }
+  }
+  const poll = active || nkuBusy;
+  if (poll && !nkuTimer) nkuTimer = setInterval(nkuStatus, 2000);
+  if (!poll && nkuTimer) { clearInterval(nkuTimer); nkuTimer = null; }
 }
 async function nkuStatus() {
   try {
-    const r = await fetch('/api/system/update');
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    const j = await apiJSON('/api/system/update');
     nkuRender(j);
   } catch (e) {
     $('#nkuState').textContent = NK.t('更新器不可用') + '：' + e.message;
@@ -1429,15 +1489,18 @@ async function nkuStatus() {
 }
 async function nkuCall(path) {
   $('#nkuMsg').textContent = '…';
+  nkuBusy = true;
+  await nkuStatus();
+  if (!nkuTimer) nkuTimer = setInterval(nkuStatus, 2000);
   try {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    const j = await apiJSON(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (j.latest) $('#nkuMsg').textContent = NK.t('最新') + ' ' + j.latest + (j.current ? ' · ' + NK.t('当前') + ' ' + j.current : '');
     else $('#nkuMsg').textContent = j.out || NK.t('已提交');
-    await nkuStatus();
   } catch (e) {
     $('#nkuMsg').textContent = NK.t('失败') + '：' + e.message;
+  } finally {
+    nkuBusy = false;
+    await nkuStatus();
   }
 }
 $('#nkuCheck').onclick = () => nkuCall('/api/system/update/check');

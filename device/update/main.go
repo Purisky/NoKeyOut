@@ -70,13 +70,17 @@ type config struct {
 }
 
 type updateState struct {
-	State    string `json:"state"`
-	Version  string `json:"version,omitempty"`
-	Unit     string `json:"unit,omitempty"`
-	Message  string `json:"message,omitempty"`
-	Error    string `json:"error,omitempty"`
-	Started  string `json:"started,omitempty"`
-	Finished string `json:"finished,omitempty"`
+	State       string  `json:"state"`
+	Version     string  `json:"version,omitempty"`
+	Unit        string  `json:"unit,omitempty"`
+	Message     string  `json:"message,omitempty"`
+	Error       string  `json:"error,omitempty"`
+	Started     string  `json:"started,omitempty"`
+	Finished    string  `json:"finished,omitempty"`
+	Total       int64   `json:"total,omitempty"`
+	Downloaded  int64   `json:"downloaded,omitempty"`
+	Percent     float64 `json:"percent,omitempty"`
+	BytesPerSec int64   `json:"bytes_per_sec,omitempty"`
 }
 
 func env(k, def string) string {
@@ -430,7 +434,7 @@ func safeTarName(raw string) (string, error) {
 	return name, nil
 }
 
-func downloadAsset(cfg config, a asset, rawURL, version string) (string, error) {
+func downloadAsset(cfg config, a asset, rawURL, version, started string) (string, error) {
 	if _, err := checkURL(rawURL, cfg.allowHTTP); err != nil {
 		return "", err
 	}
@@ -452,12 +456,20 @@ func downloadAsset(cfg config, a asset, rawURL, version string) (string, error) 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("下载发布物: HTTP %d", resp.StatusCode)
 	}
+	total := a.Size
+	if total <= 0 && resp.ContentLength > 0 {
+		total = resp.ContentLength
+	}
+	writeState(cfg, updateState{State: "downloading", Version: version, Total: total,
+		Started: started, Message: "下载发布物"})
 	f, err := os.Create(tmp)
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, assetLimit+1))
+	pw := &downloadProgress{cfg: cfg, f: f, version: version, started: started, total: total,
+		lastWrite: time.Now(), lastAt: time.Now()}
+	n, copyErr := io.Copy(io.MultiWriter(pw, h), io.LimitReader(resp.Body, assetLimit+1))
 	closeErr := f.Close()
 	if copyErr != nil {
 		os.Remove(tmp)
@@ -467,6 +479,8 @@ func downloadAsset(cfg config, a asset, rawURL, version string) (string, error) 
 		os.Remove(tmp)
 		return "", closeErr
 	}
+	writeState(cfg, updateState{State: "verifying", Version: version, Total: total, Downloaded: n,
+		Percent: 100, Started: started, Message: "校验发布物"})
 	if n > assetLimit {
 		os.Remove(tmp)
 		return "", fmt.Errorf("发布物超过 %d 字节", assetLimit)
@@ -489,6 +503,50 @@ func downloadAsset(cfg config, a asset, rawURL, version string) (string, error) 
 		return "", err
 	}
 	return dst, nil
+}
+
+// downloadProgress writes download progress into the shared state file, at most
+// four times per second. The update API polls that file while the install
+// subprocess is still downloading, so the panel can show bytes and speed.
+type downloadProgress struct {
+	cfg       config
+	f         *os.File
+	version   string
+	started   string
+	total     int64
+	done      int64
+	lastDone  int64
+	lastWrite time.Time
+	lastAt    time.Time
+}
+
+func (d *downloadProgress) Write(p []byte) (int, error) {
+	n, err := d.f.Write(p)
+	if n > 0 {
+		d.done += int64(n)
+		now := time.Now()
+		if now.Sub(d.lastWrite) >= 250*time.Millisecond || (d.total > 0 && d.done >= d.total) {
+			bps := int64(0)
+			if secs := now.Sub(d.lastAt).Seconds(); secs > 0 {
+				bps = int64(float64(d.done-d.lastDone) / secs)
+			}
+			pct := 0.0
+			if d.total > 0 {
+				pct = float64(d.done) * 100 / float64(d.total)
+				if pct > 100 {
+					pct = 100
+				}
+			}
+			msg := fmt.Sprintf("下载 %.1f MB", float64(d.done)/1e6)
+			if d.total > 0 {
+				msg = fmt.Sprintf("下载 %.1f/%.1f MB", float64(d.done)/1e6, float64(d.total)/1e6)
+			}
+			_ = writeState(d.cfg, updateState{State: "downloading", Version: d.version, Total: d.total,
+				Downloaded: d.done, Percent: pct, BytesPerSec: bps, Started: d.started, Message: msg})
+			d.lastWrite, d.lastDone, d.lastAt = now, d.done, now
+		}
+	}
+	return n, err
 }
 
 func newUnit() string {
@@ -535,15 +593,20 @@ func cmdRunDeploy(cfg config, args []string) int {
 		return 2
 	}
 	tarPath, version, unit := args[0], args[1], args[2]
-	writeState(cfg, updateState{State: "running", Version: version, Unit: unit,
-		Started: time.Now().Format(time.RFC3339), Message: "nk-deploy running"})
+	prev := readState(cfg)
+	started := prev.Started
+	if started == "" {
+		started = time.Now().Format(time.RFC3339)
+	}
+	writeState(cfg, updateState{State: "running", Version: version, Unit: unit, Total: prev.Total,
+		Downloaded: prev.Downloaded, Percent: 100, Started: started, Message: "安装中"})
 	cmd := exec.Command(cfg.upgrade, "nk-deploy", tarPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	st := updateState{State: "success", Version: version, Unit: unit,
-		Started: time.Now().Format(time.RFC3339), Finished: time.Now().Format(time.RFC3339),
-		Message: "deployed"}
+	st := updateState{State: "success", Version: version, Unit: unit, Total: prev.Total,
+		Downloaded: prev.Downloaded, Percent: 100, Started: started,
+		Finished: time.Now().Format(time.RFC3339), Message: "已部署"}
 	if err != nil {
 		st.State = "failed"
 		st.Error = err.Error()
@@ -561,15 +624,18 @@ func cmdRunRollback(cfg config, args []string) int {
 	if len(args) > 0 {
 		unit = args[0]
 	}
-	writeState(cfg, updateState{State: "rolling_back", Unit: unit,
-		Started: time.Now().Format(time.RFC3339), Message: "nk-rollback running"})
+	prev := readState(cfg)
+	started := prev.Started
+	if started == "" {
+		started = time.Now().Format(time.RFC3339)
+	}
+	writeState(cfg, updateState{State: "rolling_back", Unit: unit, Started: started, Message: "回滚中"})
 	cmd := exec.Command(cfg.upgrade, "nk-rollback")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	st := updateState{State: "rolled_back", Unit: unit,
-		Started: time.Now().Format(time.RFC3339), Finished: time.Now().Format(time.RFC3339),
-		Message: "rolled back"}
+	st := updateState{State: "rolled_back", Unit: unit, Started: started,
+		Finished: time.Now().Format(time.RFC3339), Message: "已回滚"}
 	if err != nil {
 		st.State = "failed"
 		st.Error = err.Error()
@@ -603,38 +669,49 @@ func cmdInstall(cfg config, args []string, foreground bool) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	started := time.Now().Format(time.RFC3339)
+	total := a.Size
+	writeState(cfg, updateState{State: "downloading", Version: m.Version, Total: total,
+		Started: started, Message: "下载发布物"})
 	fmt.Fprintf(os.Stderr, "下载 %s %s\n", name, m.Version)
-	tarPath, err := downloadAsset(cfg, a, a.URL, m.Version)
+	tarPath, err := downloadAsset(cfg, a, a.URL, m.Version, started)
 	if err != nil {
+		st := readState(cfg)
+		st.State = "failed"
+		st.Version = m.Version
+		st.Started = started
+		st.Finished = time.Now().Format(time.RFC3339)
+		st.Error = err.Error()
+		writeState(cfg, st)
 		fmt.Fprintln(os.Stderr, "下载失败:", err)
 		return 1
 	}
 	if foreground {
-		writeState(cfg, updateState{State: "running", Version: m.Version,
-			Started: time.Now().Format(time.RFC3339), Message: "nk-deploy running"})
+		writeState(cfg, updateState{State: "running", Version: m.Version, Total: total,
+			Downloaded: total, Percent: 100, Started: started, Message: "nk-deploy running"})
 		cmd := exec.Command(cfg.upgrade, "nk-deploy", tarPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			writeState(cfg, updateState{State: "failed", Version: m.Version,
-				Started: time.Now().Format(time.RFC3339), Finished: time.Now().Format(time.RFC3339), Error: err.Error()})
+			writeState(cfg, updateState{State: "failed", Version: m.Version, Total: total,
+				Downloaded: total, Percent: 100, Started: started, Finished: time.Now().Format(time.RFC3339), Error: err.Error()})
 			fmt.Fprintln(os.Stderr, "部署失败:", err)
 			return 1
 		}
-		writeState(cfg, updateState{State: "success", Version: m.Version,
-			Started: time.Now().Format(time.RFC3339), Finished: time.Now().Format(time.RFC3339), Message: "deployed"})
+		writeState(cfg, updateState{State: "success", Version: m.Version, Total: total,
+			Downloaded: total, Percent: 100, Started: started, Finished: time.Now().Format(time.RFC3339), Message: "deployed"})
 		fmt.Println("deployed", m.Version)
 		return 0
 	}
 	unit := newUnit()
-	if err := writeState(cfg, updateState{State: "starting", Version: m.Version, Unit: unit,
-		Started: time.Now().Format(time.RFC3339)}); err != nil {
+	if err := writeState(cfg, updateState{State: "starting", Version: m.Version, Unit: unit, Total: total,
+		Downloaded: total, Percent: 100, Started: started, Message: "准备部署"}); err != nil {
 		fmt.Fprintln(os.Stderr, "写状态失败:", err)
 		return 1
 	}
 	if err := startUnit(cfg, unit, selfPath(), "run-deploy", tarPath, m.Version, unit); err != nil {
-		writeState(cfg, updateState{State: "failed", Version: m.Version, Unit: unit,
-			Started: time.Now().Format(time.RFC3339), Finished: time.Now().Format(time.RFC3339), Error: err.Error()})
+		writeState(cfg, updateState{State: "failed", Version: m.Version, Unit: unit, Total: total,
+			Downloaded: total, Percent: 100, Started: started, Finished: time.Now().Format(time.RFC3339), Error: err.Error()})
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
